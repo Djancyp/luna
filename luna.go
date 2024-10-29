@@ -34,11 +34,15 @@ func New(config Config) (*Engine, error) {
 		return c.JSON(200, props)
 
 	})
-	return &Engine{
+	app := &Engine{
 		Logger: zerolog.New(os.Stdout).With().Timestamp().Logger(),
 		Server: server,
 		Config: config,
-	}, nil
+	}
+
+	app.CheckApp(config)
+
+	return app, nil
 }
 
 func (e *Engine) CheckApp(config Config) {
