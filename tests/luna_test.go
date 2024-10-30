@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/Djancyp/luna"
-	"github.com/Djancyp/luna/internal"
+	"github.com/Djancyp/luna/pkg"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )
@@ -18,7 +18,7 @@ func TestNew(t *testing.T) {
 	mockConfig := luna.Config{
 		AssetsPath:  "./assets",
 		EnteryPoint: "./assets/index.html",
-		Routes: []internal.ReactRoute{
+		Routes: []pkg.ReactRoute{
 			{
 				Path: "/test",
 				Props: func() map[string]interface{} {
@@ -27,10 +27,10 @@ func TestNew(t *testing.T) {
 						"id":   123,
 					}
 				},
-				Head: internal.Head{
+				Head: pkg.Head{
 					Title:       "Test Route",
 					Description: "Test Route Description",
-					CssLinks: []internal.CssLink{
+					CssLinks: []pkg.CssLink{
 						{
 							Href: "test.css",
 							DynamicAttrs: map[string]string{
@@ -38,7 +38,7 @@ func TestNew(t *testing.T) {
 							},
 						},
 					},
-					JsLinks: []internal.JsLink{
+					JsLinks: []pkg.JsLink{
 						{
 							Src: "test.js",
 							DynamicAttrs: map[string]string{

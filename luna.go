@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/Djancyp/luna/internal"
+	"github.com/Djancyp/luna/pkg"
 	"github.com/Djancyp/luna/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -82,7 +82,7 @@ func (e *Engine) CheckApp(config Config) error {
 
 func (e *Engine) InitilizeFrontend(c echo.Context) error {
 	e.GET("/*", func(c echo.Context) error {
-		html, err := internal.CreateTemplate(e.Config.Routes[0].Head)
+		html, err := pkg.CreateTemplate(e.Config.Routes[0].Head)
 		if err != nil {
 			return err
 		}
@@ -95,19 +95,19 @@ func (e *Engine) GET(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) 
 	return e.Server.Add(http.MethodGet, path, h, m...)
 }
 
-func (e *Engine) Post(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+func (e *Engine) POST(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return e.Server.Add(http.MethodPost, path, h, m...)
 }
 
-func (e *Engine) Delete(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+func (e *Engine) DELETE(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return e.Server.Add(http.MethodDelete, path, h, m...)
 }
 
-func (e *Engine) Put(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+func (e *Engine) PUT(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return e.Server.Add(http.MethodPut, path, h, m...)
 }
 
-func (e *Engine) Patch(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+func (e *Engine) PATCH(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return e.Server.Add(http.MethodPatch, path, h, m...)
 }
 

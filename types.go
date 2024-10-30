@@ -3,7 +3,7 @@ package luna
 import (
 	"text/template"
 
-	"github.com/Djancyp/luna/internal"
+	"github.com/Djancyp/luna/pkg"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 )
@@ -16,7 +16,7 @@ type Engine struct {
 	Server   *echo.Echo
 	Config   Config
 	Cache    []Cache
-	Template internal.Template
+	Template pkg.Template
 }
 
 type Cache struct {
@@ -33,5 +33,5 @@ type Config struct {
 	EnteryPoint string `default:"frontend/src/entry-client.tsx"`
 	AssetsPath  string `default:"frontend/src/assets/"`
 	TailwindCSS bool   `default:"false"`
-	Routes      []internal.ReactRoute
+	Routes      []pkg.ReactRoute
 }
