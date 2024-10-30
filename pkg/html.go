@@ -8,6 +8,7 @@ import (
 const templateHTML = `<!doctype html>
 <html lang="en">
   <head>
+
     <meta charset="UTF-8" />
     {{if .Description}}
     <meta name="description" content="{{ .Description }}" />
@@ -30,6 +31,20 @@ const templateHTML = `<!doctype html>
       {{ .CSS }}
     </style>
     {{ end }}
+
+    <script>
+      let socket = new WebSocket("ws://127.0.0.1:3000/ws");
+      socket.onopen = () => {
+      socket.send(1);
+      };
+
+      socket.onmessage = (event) => {
+      if (event.data === "reload") {
+        console.log("Change detected, reloading...");
+        window.location.reload();
+      }
+      };
+    </script>
   </head>
   <body>
     <div id="root">{{ .RenderedContent }}</div>
