@@ -12,11 +12,11 @@ type PropsResponse struct {
 	Path string `json:"path"`
 }
 type Engine struct {
-	Logger   zerolog.Logger
-	Server   *echo.Echo
-	Config   Config
-	Cache    []Cache
-	Template pkg.Template
+	Logger    zerolog.Logger
+	Server    *echo.Echo
+	Config    Config
+	Cache     []Cache
+	HotReload *HotReload
 }
 
 type Cache struct {
@@ -29,10 +29,11 @@ type Cache struct {
 }
 
 type Config struct {
-	ENV         string `default:"development"`
-	EnteryPoint string `default:"frontend/src/entry-client.tsx"`
-	AssetsPath  string `default:"frontend/src/assets/"`
-  PublicPath  string `default:"public/"`
-	TailwindCSS bool   `default:"false"`
-	Routes      []pkg.ReactRoute
+	ENV                 string `default:"development"`
+	EnteryPoint         string `default:"frontend/src/entry-client.tsx"`
+	AssetsPath          string `default:"frontend/src/assets/"`
+	PublicPath          string `default:"public/"`
+	TailwindCSS         bool   `default:"false"`
+	HotReloadServerPort int    `default:"8080"`
+	Routes              []pkg.ReactRoute
 }

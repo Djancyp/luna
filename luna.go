@@ -31,7 +31,7 @@ func New(config Config) (*Engine, error) {
 		to := body.Path
 		props := make(map[string]interface{})
 		for _, route := range config.Routes {
-			if route.Path == to {
+			if route.Path == to && route.Props != nil {
 				props[to] = route.Props()
 			}
 		}
@@ -44,6 +44,9 @@ func New(config Config) (*Engine, error) {
 		Server: server,
 		Config: config,
 	}
+
+	app.HotReload = newHotReload(app)
+	app.HotReload.Start()
 	app.CheckApp(config)
 	return app, nil
 }
@@ -103,12 +106,14 @@ func (e *Engine) InitializeFrontend() error {
 			if route.Path == path {
 				// Get route parameters and properties
 				var props map[string]interface{}
-				if matched, routeParams := pkg.MatchPath(route.Path, path); matched {
+				if matched, routeParams := pkg.MatchPath(route.Path, path); matched && route.Props != nil {
 					if routeParams != nil {
 						props = route.Props(routeParams)
 					} else {
 						props = route.Props()
 					}
+				} else {
+					props = map[string]interface{}{}
 				}
 
 				// Build client and server assets
@@ -204,4 +209,15 @@ func (e *Engine) PATCH(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc
 
 func (e *Engine) Start(address string) {
 	e.Server.Logger.Fatal(e.Server.Start(address))
+}
+func (e *Engine) Group(prefix string, m ...echo.MiddlewareFunc) *echo.Group {
+	return e.Server.Group(prefix, m...)
+}
+
+func (e *Engine) Static(prefix, root string) {
+	e.Server.Static(prefix, root)
+}
+
+func (e *Engine) Use(middleware ...echo.MiddlewareFunc) {
+	e.Server.Use(middleware...)
 }
