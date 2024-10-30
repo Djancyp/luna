@@ -32,7 +32,7 @@ func Tailwind(baseDir string) string {
 
 	// Paths for temporary files
 	inputCSSPath := filepath.Join(tempDir, "input.css")
-	configPath := filepath.Join(tempDir, "tailwind.config.js")
+	config := filepath.Join(baseDir, "tailwind.config.js")
 	outputCSSPath := filepath.Join(tempDir, "output.css")
 
 	// Write virtual CSS input file
@@ -40,13 +40,9 @@ func Tailwind(baseDir string) string {
 		log.Fatalf("Failed to write input.css: %v", err)
 	}
 
-	// Write virtual Tailwind config file
-	if err := os.WriteFile(configPath, []byte(tailwindConfig), 0644); err != nil {
-		log.Fatalf("Failed to write tailwind.config.js: %v", err)
-	}
 
 	// Run Tailwind CSS using npx, specifying input and output paths
-	cmd := exec.Command("npx", "tailwindcss", "-i", inputCSSPath, "-o", outputCSSPath, "--config", configPath)
+	cmd := exec.Command("npx", "tailwindcss", "-i", inputCSSPath, "-o", outputCSSPath, "--config", config)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
