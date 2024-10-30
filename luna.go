@@ -67,6 +67,14 @@ func (e *Engine) CheckApp(config Config) error {
 		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.EnteryPoint)
 		os.Exit(1)
 	}
+	if config.TailwindCSS != false {
+		err = utils.IsFileExist(config.RootPath + "tailwind.config.js")
+		if err != nil {
+			e.Logger.Error().Msgf("TailwindCSS file not found: tailwind.config.js")
+			os.Exit(1)
+		}
+	}
+
 	if config.ENV != "production" {
 		for _, route := range config.Routes {
 			for _, css := range *&route.Head.CssLinks {
@@ -92,6 +100,11 @@ func (e *Engine) CheckApp(config Config) error {
 func (e *Engine) InitializeFrontend() error {
 	// Serve static files from the "frontend/public" directory
 	// Catch-all route for serving dynamic content
+	var tailwind string
+	if e.Config.TailwindCSS {
+		tailwind = pkg.Tailwind(e.Config.RootPath)
+	}
+
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
 
@@ -131,6 +144,8 @@ func (e *Engine) InitializeFrontend() error {
 					e.Logger.Error().Msgf("Error building server: %s", err)
 					return c.String(http.StatusInternalServerError, "Error building server")
 				}
+
+				server.CSS = fmt.Sprintf("%s\n%s", server.CSS, tailwind)
 
 				// Render server and client HTML
 				serverHTML, err := pkg.RenderServer(server.JS, route.Path)
