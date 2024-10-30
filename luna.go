@@ -80,9 +80,19 @@ func (e *Engine) CheckApp(config Config) error {
 	return nil
 }
 
-func (e *Engine) InitilizeFrontend(c echo.Context) error {
+func (e *Engine) InitilizeFrontend() error {
 	e.GET("/*", func(c echo.Context) error {
-		html, err := pkg.CreateTemplate(e.Config.Routes[0].Head)
+		html, err := pkg.CreateTemplate(
+			pkg.CreateTemplateData{
+				Title:           "Test Route",
+				Description:     "Test Route Description",
+				CssLinks:        []string{},
+				JsLinks:         []string{},
+				RenderedContent: "Test Route",
+				JS:              "",
+				CSS:             "",
+			},
+		)
 		if err != nil {
 			return err
 		}
