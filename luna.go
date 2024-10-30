@@ -45,8 +45,11 @@ func New(config Config) (*Engine, error) {
 		Config: config,
 	}
 
-	app.HotReload = newHotReload(app)
-	app.HotReload.Start()
+	if config.ENV != "production" {
+		app.HotReload = newHotReload(app)
+		app.HotReload.Start()
+	}
+
 	app.CheckApp(config)
 	return app, nil
 }
@@ -164,6 +167,7 @@ func (e *Engine) InitializeFrontend() error {
 					RenderedContent: template.HTML(serverHTML),
 					JS:              template.JS(clientHTML),
 					CSS:             template.CSS(server.CSS),
+					Dev:             e.Config.ENV != "production",
 				}
 				break
 			}

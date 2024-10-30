@@ -32,6 +32,7 @@ const templateHTML = `<!doctype html>
     </style>
     {{ end }}
 
+    {{if .Dev}}
     <script>
       let socket = new WebSocket("ws://127.0.0.1:3000/ws");
       socket.onopen = () => {
@@ -45,6 +46,7 @@ const templateHTML = `<!doctype html>
       }
       };
     </script>
+    {{end}}
   </head>
   <body>
     <div id="root">{{ .RenderedContent }}</div>
@@ -71,6 +73,7 @@ type CreateTemplateData struct {
 	CSS             template.CSS
 	JS              template.JS
 	RenderedContent template.HTML
+	Dev             bool
 }
 
 func CreateTemplate(data CreateTemplateData) (*template.Template, error) {
