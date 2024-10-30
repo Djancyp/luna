@@ -1,6 +1,7 @@
 package luna
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 
@@ -14,11 +15,9 @@ func New(config Config) (*Engine, error) {
 	server := echo.New()
 	server.Static("/assets", config.AssetsPath)
 	server.Use(middleware.CORS())
-
 	server.Use(middleware.GzipWithConfig(middleware.GzipConfig{
 		Level: 5,
 	}))
-
 	server.POST("/props", func(c echo.Context) error {
 		body := PropsResponse{}
 		if err := c.Bind(&body); err != nil {
@@ -39,13 +38,11 @@ func New(config Config) (*Engine, error) {
 		Server: server,
 		Config: config,
 	}
-
 	app.CheckApp(config)
-
 	return app, nil
 }
 
-func (e *Engine) CheckApp(config Config) {
+func (e *Engine) CheckApp(config Config) error {
 	err := utils.IsFolderExist(config.AssetsPath)
 	if err != nil {
 		e.Logger.Error().Msgf("Assets folder not found: %s", config.AssetsPath)
@@ -57,6 +54,30 @@ func (e *Engine) CheckApp(config Config) {
 		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.EnteryPoint)
 		panic(err)
 	}
+	if config.ENV != "production" {
+		for _, route := range config.Routes {
+			for _, css := range *route.MetaData.CssLinks {
+				err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, css.Href))
+				if err != nil {
+					e.Logger.Error().Msgf("Css file not found: %s", config.AssetsPath+css.Href)
+					panic(err)
+				}
+			}
+			for _, js := range *route.MetaData.JsLinks {
+				err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, js.Src))
+				if err != nil {
+					e.Logger.Error().Msgf("Js file not found: %s", config.AssetsPath+js.Src)
+					panic(err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (e *Engine) InitilizeFrontend(c echo.Context) error {
+	return c.File(e.Config.EnteryPoint)
 }
 
 func (e *Engine) Get(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
@@ -78,6 +99,7 @@ func (e *Engine) Put(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) 
 func (e *Engine) Patch(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return e.Server.Add(http.MethodPatch, path, h, m...)
 }
+
 func (e *Engine) Start(address string) {
 	e.Server.Logger.Fatal(e.Server.Start(address))
 }

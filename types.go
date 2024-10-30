@@ -12,10 +12,11 @@ type PropsResponse struct {
 	Path string `json:"path"`
 }
 type Engine struct {
-	Logger zerolog.Logger
-	Server *echo.Echo
-	Config Config
-	Cache  []Cache
+	Logger   zerolog.Logger
+	Server   *echo.Echo
+	Config   Config
+	Cache    []Cache
+	Template internal.Template
 }
 
 type Cache struct {
@@ -32,5 +33,5 @@ type Config struct {
 	EnteryPoint string `default:"frontend/src/entry-client.tsx"`
 	AssetsPath  string `default:"frontend/src/assets/"`
 	TailwindCSS bool   `default:"false"`
-	Routes     []internal.ReactRoute
+	Routes      []internal.ReactRoute
 }
