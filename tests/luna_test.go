@@ -27,10 +27,10 @@ func TestNew(t *testing.T) {
 						"id":   123,
 					}
 				},
-				MetaData: internal.MetaData{
+				Head: internal.Head{
 					Title:       "Test Route",
 					Description: "Test Route Description",
-					CssLinks: &[]internal.CssLink{
+					CssLinks: []internal.CssLink{
 						{
 							Href: "test.css",
 							DynamicAttrs: map[string]string{
@@ -38,7 +38,7 @@ func TestNew(t *testing.T) {
 							},
 						},
 					},
-					JsLinks: &[]internal.JsLink{
+					JsLinks: []internal.JsLink{
 						{
 							Src: "test.js",
 							DynamicAttrs: map[string]string{

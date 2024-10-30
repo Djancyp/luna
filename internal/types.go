@@ -3,17 +3,17 @@ package internal
 import "html/template"
 
 type ReactRoute struct {
-	Path     string
-	MetaData MetaData
-	Props    func() map[string]interface{}
+	Path  string
+	Head  Head
+	Props func() map[string]interface{}
 }
 
-type MetaData struct {
+type Head struct {
 	Title       string
 	Description string
-	CssLinks    *[]CssLink
-	JsLinks     *[]JsLink
-	MetaTags    *[]MetaTag
+	CssLinks    []CssLink
+	JsLinks     []JsLink
+	MetaTags    []MetaTag
 }
 
 type MetaTag struct {

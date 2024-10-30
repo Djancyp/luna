@@ -46,28 +46,29 @@ func (e *Engine) CheckApp(config Config) error {
 	err := utils.IsFolderExist(config.AssetsPath)
 	if err != nil {
 		e.Logger.Error().Msgf("Assets folder not found: %s", config.AssetsPath)
-		panic(err)
+		// stop the app no panic
+		os.Exit(1)
 	}
 
 	err = utils.IsFileExist(config.EnteryPoint)
 	if err != nil {
 		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.EnteryPoint)
-		panic(err)
+		os.Exit(1)
 	}
 	if config.ENV != "production" {
 		for _, route := range config.Routes {
-			for _, css := range *route.MetaData.CssLinks {
+			for _, css := range *&route.Head.CssLinks {
 				err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, css.Href))
 				if err != nil {
 					e.Logger.Error().Msgf("Css file not found: %s", config.AssetsPath+css.Href)
-					panic(err)
+					os.Exit(1)
 				}
 			}
-			for _, js := range *route.MetaData.JsLinks {
+			for _, js := range *&route.Head.JsLinks {
 				err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, js.Src))
 				if err != nil {
 					e.Logger.Error().Msgf("Js file not found: %s", config.AssetsPath+js.Src)
-					panic(err)
+					os.Exit(1)
 				}
 			}
 		}
