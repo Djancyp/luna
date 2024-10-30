@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Djancyp/luna/internal"
 	"github.com/Djancyp/luna/utils"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -12,6 +13,7 @@ import (
 )
 
 func New(config Config) (*Engine, error) {
+
 	server := echo.New()
 	server.Static("/assets", config.AssetsPath)
 	server.Use(middleware.CORS())
@@ -33,6 +35,7 @@ func New(config Config) (*Engine, error) {
 		return c.JSON(200, props)
 
 	})
+
 	app := &Engine{
 		Logger: zerolog.New(os.Stdout).With().Timestamp().Logger(),
 		Server: server,
@@ -78,10 +81,17 @@ func (e *Engine) CheckApp(config Config) error {
 }
 
 func (e *Engine) InitilizeFrontend(c echo.Context) error {
-	return c.File(e.Config.EnteryPoint)
+	e.GET("/*", func(c echo.Context) error {
+		html, err := internal.CreateTemplate(e.Config.Routes[0].Head)
+		if err != nil {
+			return err
+		}
+		return html.Execute(c.Response().Writer, nil)
+	})
+	return nil
 }
 
-func (e *Engine) Get(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
+func (e *Engine) GET(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc) *echo.Route {
 	return e.Server.Add(http.MethodGet, path, h, m...)
 }
 

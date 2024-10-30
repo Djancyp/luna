@@ -11,6 +11,7 @@ type ReactRoute struct {
 type Head struct {
 	Title       string
 	Description string
+	Favicon     Favicon
 	CssLinks    []CssLink
 	JsLinks     []JsLink
 	MetaTags    []MetaTag
@@ -20,6 +21,10 @@ type MetaTag struct {
 	Name         string
 	Content      string
 	DynamicAttrs map[string]string
+}
+type Favicon struct {
+	Href string
+	Type string
 }
 
 type CssLink struct {
@@ -32,6 +37,4 @@ type JsLink struct {
 }
 type Template struct {
 	HTML     *template.Template
-	CSSLinks CssLink
-	JSLinks  JsLink
 }
