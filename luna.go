@@ -2,6 +2,7 @@ package luna
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 
@@ -82,21 +83,76 @@ func (e *Engine) CheckApp(config Config) error {
 
 func (e *Engine) InitilizeFrontend() error {
 	e.GET("/*", func(c echo.Context) error {
-		html, err := pkg.CreateTemplate(
-			pkg.CreateTemplateData{
-				Title:           "Test Route",
-				Description:     "Test Route Description",
-				CssLinks:        []string{},
-				JsLinks:         []string{},
-				RenderedContent: "Test Route",
-				JS:              "",
-				CSS:             "",
-			},
-		)
-		if err != nil {
-			return err
+		var html *template.Template
+		params := pkg.CreateTemplateData{}
+
+		// Loop through routes to find a matching path
+		for _, route := range e.Config.Routes {
+			if route.Path == c.Request().URL.Path {
+				var p map[string]interface{}
+				// get the promps
+				if matched, params := pkg.MatchPath(route.Path, c.Request().URL.Path); matched {
+					if params != nil {
+						p = route.Props(params)
+					} else {
+						p = route.Props()
+					}
+				}
+				client, err := pkg.BuildClient(e.Config.ENV)
+				if err != nil {
+					e.Logger.Error().Msgf("Error building client: %s", err)
+					return c.String(http.StatusInternalServerError, "Error building client")
+				}
+
+				server, err := pkg.BuildServer(route.Path, p, e.Config.ENV)
+				if err != nil {
+					e.Logger.Error().Msgf("Error building server: %s", err)
+					return c.String(http.StatusInternalServerError, "Error building server")
+				}
+
+				ServerHtml, err := pkg.RenderServer(server.JS, route.Path)
+				ClientHtml, err := pkg.RenderClientWithProps(client.JS, p, route.Path)
+
+				// Generate CSS links as template.HTML to avoid HTML escaping
+				var links []template.HTML
+				for _, css := range route.Head.CssLinks {
+					cssLink := template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
+					links = append(links, cssLink)
+				}
+
+				// Load the template
+				html, err = pkg.GetHTML()
+				if err != nil {
+					fmt.Println("Template loading error:", err)
+					return c.String(http.StatusInternalServerError, "Error loading template")
+				}
+
+				// Prepare data for the template
+				params = pkg.CreateTemplateData{
+					Title:           route.Head.Title,
+					Description:     route.Head.Description,
+					CssLinks:        links,
+					JsLinks:         []template.HTML{}, // Populate with JS links if needed
+					RenderedContent: template.HTML(ServerHtml),
+					JS:              template.JS(ClientHtml),
+					CSS:             template.CSS(server.CSS),
+				}
+				break
+			}
 		}
-		return html.Execute(c.Response().Writer, nil)
+
+		// Check if a matching route was found and html template is initialized
+		if html == nil {
+			fmt.Println("Page not found")
+			return echo.NewHTTPError(http.StatusNotFound, "Page not found")
+		}
+
+		// Render the template with parameters
+		if err := html.Execute(c.Response().Writer, params); err != nil {
+			fmt.Println("Template execution error:", err)
+			return c.String(http.StatusInternalServerError, "Error rendering page")
+		}
+		return nil
 	})
 	return nil
 }

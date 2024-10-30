@@ -5,7 +5,7 @@ import "html/template"
 type ReactRoute struct {
 	Path  string
 	Head  Head
-	Props func() map[string]interface{}
+	Props func(params ...map[string]string) map[string]interface{}
 }
 
 type Head struct {

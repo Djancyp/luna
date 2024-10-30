@@ -10,7 +10,7 @@ const templateHTML = `<!doctype html>
   <head>
     <meta charset="UTF-8" />
     {{if .Description}}
-    <meta name="description" content={{ .Description }} />
+    <meta name="description" content="{{ .Description }}" />
     {{end}}
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -18,14 +18,16 @@ const templateHTML = `<!doctype html>
     <title>{{.Title}}</title>
     {{end}}
     {{ range .CssLinks }}
-    <link href="{{.Href}}" rel="stylesheet" {{ range $key, $value := .DynamicAttrs }}{{ $key }}="{{ $value }}"{{ end }} />
+      {{ . }}
     {{ end }}
+
     {{ range .JsLinks }}
-    <script src="{{.Src}}" {{ range $key, $value := .DynamicAttrs }}{{ $key }}="{{ $value }}"{{ end }}></script>
+    <script src="{{.}}"></script>
     {{ end }}
+
     {{ if .CSS }}
     <style>
-    {{ .CSS }}
+      {{ .CSS }}
     </style>
     {{ end }}
   </head>
@@ -49,11 +51,11 @@ func GetHTML() (*template.Template, error) {
 type CreateTemplateData struct {
 	Title           string
 	Description     string
-	CssLinks        []string
-	JsLinks         []string
-	CSS             string
-	JS              string
-	RenderedContent string
+	CssLinks        []template.HTML
+	JsLinks         []template.HTML
+	CSS             template.CSS
+	JS              template.JS
+	RenderedContent template.HTML
 }
 
 func CreateTemplate(data CreateTemplateData) (*template.Template, error) {
