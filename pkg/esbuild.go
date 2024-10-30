@@ -135,7 +135,6 @@ func BuildServer(path string, props map[string]interface{},env string) (BuildRes
 	propJs := fmt.Sprintf(`
   globalThis.props = {'%s':%s};
   `, path, template.JS(string(jsonProps)))
-	fmt.Println(propJs)
 
 	opt := esbuild.Build(esbuild.BuildOptions{
 		EntryPoints:       []string{"frontend/src/entry-server.tsx"},

@@ -32,6 +32,7 @@ type Config struct {
 	ENV         string `default:"development"`
 	EnteryPoint string `default:"frontend/src/entry-client.tsx"`
 	AssetsPath  string `default:"frontend/src/assets/"`
+  PublicPath  string `default:"public/"`
 	TailwindCSS bool   `default:"false"`
 	Routes      []pkg.ReactRoute
 }
