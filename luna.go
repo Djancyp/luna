@@ -62,9 +62,9 @@ func (e *Engine) CheckApp(config Config) error {
 		os.Exit(1)
 	}
 
-	err = utils.IsFileExist(config.EnteryPoint)
+	err = utils.IsFileExist(config.EntryPoint)
 	if err != nil {
-		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.EnteryPoint)
+		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.EntryPoint)
 		os.Exit(1)
 	}
 	if config.TailwindCSS != false {
