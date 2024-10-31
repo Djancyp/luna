@@ -16,7 +16,7 @@ const tailwindCSSInput = `
 
 // Tailwind configuration in JSON format (customize paths and settings as needed)
 const tailwindConfig = `
-module.exports = {
+export default {
   content: ["./frontend/src/**/*.tsx"],
   theme: {
     extend: {}
@@ -39,7 +39,6 @@ func Tailwind(baseDir string) string {
 	if err := os.WriteFile(inputCSSPath, []byte(tailwindCSSInput), 0644); err != nil {
 		log.Fatalf("Failed to write input.css: %v", err)
 	}
-
 
 	// Run Tailwind CSS using npx, specifying input and output paths
 	cmd := exec.Command("npx", "tailwindcss", "-i", inputCSSPath, "-o", outputCSSPath, "--config", config, "--minify")
