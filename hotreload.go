@@ -29,9 +29,9 @@ func newHotReload(engine *Engine) *HotReload {
 }
 
 // Start starts the hot reload server and watcher
-func (hr *HotReload) Start() {
+func (hr *HotReload) Start(basedir string) {
 	go hr.startServer()
-	go hr.startWatcher()
+	go hr.startWatcher(basedir)
 }
 
 // startServer starts the hot reload websocket server
@@ -100,7 +100,7 @@ func (hr *HotReload) removeClient(routeID string, ws *websocket.Conn) {
 }
 
 // startWatcher starts the file watcher
-func (hr *HotReload) startWatcher() {
+func (hr *HotReload) startWatcher(basedir string) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		hr.logger.Err(err).Msg("Failed to start watcher")
@@ -109,7 +109,7 @@ func (hr *HotReload) startWatcher() {
 	defer watcher.Close()
 
 	// Walk through all files in the frontend directory and add them to the watcher
-	err = filepath.Walk("frontend/", func(path string, fi os.FileInfo, err error) error {
+	err = filepath.Walk(basedir, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			hr.logger.Err(err).Msgf("Error accessing path: %s", path)
 			return nil

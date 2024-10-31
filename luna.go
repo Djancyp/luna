@@ -47,7 +47,7 @@ func New(config Config) (*Engine, error) {
 
 	if config.ENV != "production" {
 		app.HotReload = newHotReload(app)
-		app.HotReload.Start()
+		app.HotReload.Start(config.RootPath)
 	}
 
 	app.CheckApp(config)
