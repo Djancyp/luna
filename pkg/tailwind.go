@@ -42,7 +42,7 @@ func Tailwind(baseDir string) string {
 
 
 	// Run Tailwind CSS using npx, specifying input and output paths
-	cmd := exec.Command("npx", "tailwindcss", "-i", inputCSSPath, "-o", outputCSSPath, "--config", config)
+	cmd := exec.Command("npx", "tailwindcss", "-i", inputCSSPath, "-o", outputCSSPath, "--config", config, "--minify")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
