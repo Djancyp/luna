@@ -3,9 +3,10 @@ package pkg
 import "html/template"
 
 type ReactRoute struct {
-	Path  string
-	Head  Head
-	Props func(params ...map[string]string) map[string]interface{}
+	Path        string
+	CacheExpiry int64
+	Head        Head
+	Props       func(params ...map[string]string) map[string]interface{}
 }
 
 type Head struct {
@@ -36,5 +37,5 @@ type JsLink struct {
 	DynamicAttrs map[string]string
 }
 type Template struct {
-	HTML     *template.Template
+	HTML *template.Template
 }
