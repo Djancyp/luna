@@ -16,8 +16,9 @@ import (
 func TestNew(t *testing.T) {
 	// Mock configuration
 	mockConfig := luna.Config{
-		AssetsPath: "./assets",
-		EntryPoint: "./assets/index.html",
+		AssetsPath:       "./assets",
+		ServerEntryPoint: "./assets/index.html",
+		ClientEntryPoint: "./assets/index.html",
 		Routes: []pkg.ReactRoute{
 			{
 				Path: "/test",
@@ -83,8 +84,8 @@ func TestNew(t *testing.T) {
 func TestCheckApp(t *testing.T) {
 	// Mock configuration
 	mockConfig := luna.Config{
-		AssetsPath: "./assets",
-		EntryPoint: "./assets/index.html",
+		AssetsPath:       "./assets",
+		ServerEntryPoint: "./assets/index.html",
 	}
 
 	// Call New with the mock configuration

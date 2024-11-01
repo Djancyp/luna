@@ -17,10 +17,13 @@ var processPolyfill = `var process = {env: {NODE_ENV: "development"}};`
 var consolePolyfill = `var console = {log: function(){}};`
 
 type JobRunner struct {
-	ID     string
-	Logger zerolog.Logger
-	Path   string
-	Routes []ReactRoute
+	Logger           zerolog.Logger
+	Path             string
+	ServerEntryPoint string
+	ClientEntryPoint string
+	ClientJS         string
+	Env              string
+	Routes           []ReactRoute
 }
 
 type serverRenderResult struct {
@@ -92,13 +95,14 @@ var Loader = map[string]esbuild.Loader{
 	".html":  esbuild.LoaderFile,
 }
 
-func BuildClient(env string, props map[string]interface{}) (BuildResult, error) {
+func (j JobRunner) BuildClient(props map[string]interface{}) (BuildResult, error) {
+	env := j.Env
 	jsonProps, error := json.Marshal(props)
 	if error != nil {
 		return BuildResult{}, error
 	}
 	opt := esbuild.Build(esbuild.BuildOptions{
-		EntryPoints:       []string{"./frontend/src/entry-client.tsx"},
+		EntryPoints:       []string{j.ClientEntryPoint},
 		Outdir:            "/",
 		AssetNames:        fmt.Sprintf("%s/[name]", strings.TrimPrefix("/assets/", "/")),
 		Bundle:            true,
@@ -131,15 +135,15 @@ func BuildClient(env string, props map[string]interface{}) (BuildResult, error) 
 	return result, nil
 }
 
-func BuildServer(path string, props map[string]interface{}, env string) (BuildResult, error) {
-
+func (j JobRunner) BuildServer(path string, props map[string]interface{}) (BuildResult, error) {
+	env := j.Env
 	jsonProps, error := json.Marshal(props)
 	if error != nil {
 		panic(error)
 	}
 
 	opt := esbuild.Build(esbuild.BuildOptions{
-		EntryPoints:       []string{"frontend/src/entry-server.tsx"},
+		EntryPoints:       []string{j.ServerEntryPoint},
 		Bundle:            true,
 		Write:             false,
 		Outdir:            "/",

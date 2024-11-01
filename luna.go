@@ -62,9 +62,14 @@ func (e *Engine) CheckApp(config Config) error {
 		os.Exit(1)
 	}
 
-	err = utils.IsFileExist(config.EntryPoint)
+	err = utils.IsFileExist(config.ServerEntryPoint)
 	if err != nil {
-		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.EntryPoint)
+		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.ServerEntryPoint)
+		os.Exit(1)
+	}
+	err = utils.IsFileExist(config.ClientEntryPoint)
+	if err != nil {
+		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.ClientEntryPoint)
 		os.Exit(1)
 	}
 	if config.TailwindCSS != false {
@@ -104,6 +109,11 @@ func (e *Engine) InitializeFrontend() error {
 	if e.Config.TailwindCSS {
 		tailwind = pkg.Tailwind(e.Config.RootPath)
 	}
+	job := pkg.JobRunner{
+		ServerEntryPoint: e.Config.ServerEntryPoint,
+		ClientEntryPoint: e.Config.ClientEntryPoint,
+		Env:              e.Config.ENV,
+	}
 
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
@@ -133,13 +143,13 @@ func (e *Engine) InitializeFrontend() error {
 				}
 
 				// Build client and server assets
-				client, err := pkg.BuildClient(e.Config.ENV, props)
+				client, err := job.BuildClient(props)
 				if err != nil {
 					e.Logger.Error().Msgf("Error building client: %s", err)
 					return c.String(http.StatusInternalServerError, "Error building client")
 				}
 
-				server, err := pkg.BuildServer(route.Path, props, e.Config.ENV)
+				server, err := job.BuildServer(route.Path, props )
 				if err != nil {
 					e.Logger.Error().Msgf("Error building server: %s", err)
 					return c.String(http.StatusInternalServerError, "Error building server")

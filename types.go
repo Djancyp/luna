@@ -31,7 +31,8 @@ type Cache struct {
 type Config struct {
 	ENV                 string `default:"development"`
 	RootPath            string `default:"frontend/"`
-	EntryPoint          string `default:"frontend/src/entry-client.tsx"`
+	ServerEntryPoint    string `default:"frontend/src/entry-client.tsx"`
+	ClientEntryPoint    string `default:"frontend/src/entry-server.tsx"`
 	AssetsPath          string `default:"frontend/src/assets/"`
 	PublicPath          string `default:"public/"`
 	TailwindCSS         bool   `default:"false"`
