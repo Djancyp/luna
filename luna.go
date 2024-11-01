@@ -133,7 +133,7 @@ func (e *Engine) InitializeFrontend() error {
 				}
 
 				// Build client and server assets
-				client, err := pkg.BuildClient(e.Config.ENV)
+				client, err := pkg.BuildClient(e.Config.ENV, props)
 				if err != nil {
 					e.Logger.Error().Msgf("Error building client: %s", err)
 					return c.String(http.StatusInternalServerError, "Error building client")
@@ -153,7 +153,7 @@ func (e *Engine) InitializeFrontend() error {
 					e.Logger.Error().Msgf("Error rendering server HTML: %s", err)
 					return c.String(http.StatusInternalServerError, "Error rendering server HTML")
 				}
-				clientHTML, err := pkg.RenderClientWithProps(client.JS, props, route.Path)
+				_, err = pkg.RenderClientWithProps(client.JS, props, route.Path)
 				if err != nil {
 					e.Logger.Error().Msgf("Error rendering client HTML: %s", err)
 					return c.String(http.StatusInternalServerError, "Error rendering client HTML")
@@ -180,7 +180,7 @@ func (e *Engine) InitializeFrontend() error {
 					CssLinks:        cssLinks,
 					JsLinks:         []template.HTML{}, // Populate with JS links if needed
 					RenderedContent: template.HTML(serverHTML),
-					JS:              template.JS(clientHTML),
+					JS:              template.JS(client.JS),
 					CSS:             template.CSS(server.CSS),
 					Dev:             e.Config.ENV != "production",
 				}

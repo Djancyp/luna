@@ -3,7 +3,6 @@ package pkg
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"regexp"
 	"strings"
 
@@ -18,10 +17,10 @@ var processPolyfill = `var process = {env: {NODE_ENV: "development"}};`
 var consolePolyfill = `var console = {log: function(){}};`
 
 type JobRunner struct {
-	ID                 string
-	Logger             zerolog.Logger
-	Path               string
-	Routes             []ReactRoute
+	ID     string
+	Logger zerolog.Logger
+	Path   string
+	Routes []ReactRoute
 }
 
 type serverRenderResult struct {
@@ -93,7 +92,11 @@ var Loader = map[string]esbuild.Loader{
 	".html":  esbuild.LoaderFile,
 }
 
-func BuildClient(env string) (BuildResult, error) {
+func BuildClient(env string, props map[string]interface{}) (BuildResult, error) {
+	jsonProps, error := json.Marshal(props)
+	if error != nil {
+		return BuildResult{}, error
+	}
 	opt := esbuild.Build(esbuild.BuildOptions{
 		EntryPoints:       []string{"./frontend/src/entry-client.tsx"},
 		Outdir:            "/",
@@ -105,6 +108,9 @@ func BuildClient(env string) (BuildResult, error) {
 		MinifyIdentifiers: env == "production",
 		MinifySyntax:      env == "production",
 		Loader:            Loader,
+		Define: map[string]string{
+			"props": string(jsonProps),
+		},
 	})
 
 	if len(opt.Errors) > 0 {
@@ -125,16 +131,12 @@ func BuildClient(env string) (BuildResult, error) {
 	return result, nil
 }
 
-func BuildServer(path string, props map[string]interface{},env string) (BuildResult, error) {
+func BuildServer(path string, props map[string]interface{}, env string) (BuildResult, error) {
 
 	jsonProps, error := json.Marshal(props)
 	if error != nil {
 		panic(error)
 	}
-
-	propJs := fmt.Sprintf(`
-  globalThis.props = {'%s':%s};
-  `, path, template.JS(string(jsonProps)))
 
 	opt := esbuild.Build(esbuild.BuildOptions{
 		EntryPoints:       []string{"frontend/src/entry-server.tsx"},
@@ -148,8 +150,11 @@ func BuildServer(path string, props map[string]interface{},env string) (BuildRes
 		MinifyWhitespace:  env == "production",
 		MinifyIdentifiers: env == "production",
 		MinifySyntax:      env == "production",
+		Define: map[string]string{
+			"props": string(jsonProps),
+		},
 		Banner: map[string]string{
-			"js": textEncoderPolyfill + processPolyfill + consolePolyfill + propJs,
+			"js": textEncoderPolyfill + processPolyfill + consolePolyfill,
 		},
 		Loader: Loader,
 	})
