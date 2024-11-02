@@ -1,6 +1,7 @@
 package luna
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/errgroup"
 )
 
 func New(config Config) (*Engine, error) {
@@ -103,12 +105,12 @@ func (e *Engine) CheckApp(config Config) error {
 }
 
 func (e *Engine) InitializeFrontend() error {
-	// Serve static files from the "frontend/public" directory
-	// Catch-all route for serving dynamic content
-	var tailwind string
+	// Initialize Tailwind if configured
+	var tailwindCSS string
 	if e.Config.TailwindCSS {
-		tailwind = pkg.Tailwind(e.Config.RootPath)
+		tailwindCSS = pkg.Tailwind(e.Config.RootPath)
 	}
+
 	job := pkg.JobRunner{
 		ServerEntryPoint: e.Config.ServerEntryPoint,
 		ClientEntryPoint: e.Config.ClientEntryPoint,
@@ -119,124 +121,18 @@ func (e *Engine) InitializeFrontend() error {
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
 
-		cachedItem, found := manager.GetCache(path)
-		// Skip static assets (e.g., images, CSS, JS files)
+		// Serve static files directly
 		if filepath.Ext(path) != "" {
-			// Let the static file handler handle this request
 			return c.File(filepath.Join(e.Config.PublicPath, path))
 		}
 
-		if !found || e.Config.ENV != "production" {
-			var html *template.Template
-			params := pkg.CreateTemplateData{}
-			// Loop through routes to find a matching path
-			for _, route := range e.Config.Routes {
-				if route.Path == path {
-					// Get route parameters and properties
-					var props map[string]interface{}
-					if matched, routeParams := pkg.MatchPath(route.Path, path); matched && route.Props != nil {
-						if routeParams != nil {
-							props = route.Props(routeParams)
-						} else {
-							props = route.Props()
-						}
-					} else {
-						props = map[string]interface{}{}
-					}
-
-					// Build client and server assets
-					client, err := job.BuildClient(props)
-					if err != nil {
-						e.Logger.Error().Msgf("Error building client: %s", err)
-						return c.String(http.StatusInternalServerError, "Error building client")
-					}
-
-					server, err := job.BuildServer(route.Path, props)
-					if err != nil {
-						e.Logger.Error().Msgf("Error building server: %s", err)
-						return c.String(http.StatusInternalServerError, "Error building server")
-					}
-
-					server.CSS = fmt.Sprintf("%s\n%s", server.CSS, tailwind)
-
-					// Render server and client HTML
-					serverHTML, err := pkg.RenderServer(server.JS, route.Path)
-					if err != nil {
-						e.Logger.Error().Msgf("Error rendering server HTML: %s", err)
-						return c.String(http.StatusInternalServerError, "Error rendering server HTML")
-					}
-					_, err = pkg.RenderClientWithProps(client.JS, props, route.Path)
-					if err != nil {
-						e.Logger.Error().Msgf("Error rendering client HTML: %s", err)
-						return c.String(http.StatusInternalServerError, "Error rendering client HTML")
-					}
-
-					// Generate CSS links
-					var cssLinks []template.HTML
-					for _, css := range route.Head.CssLinks {
-						cssLink := template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
-						cssLinks = append(cssLinks, cssLink)
-					}
-					var jsLinks []template.HTML
-					for _, js := range route.Head.JsLinks {
-						jsLink := template.HTML(fmt.Sprintf("<script src=\"/assets/%s\" type=\"module\"></script>", js.Src))
-						jsLinks = append(jsLinks, jsLink)
-					}
-
-					// Load the HTML template
-					html, err = pkg.GetHTML()
-					if err != nil {
-						e.Logger.Error().Msgf("Template loading error: %s", err)
-						return c.String(http.StatusInternalServerError, "Error loading template")
-					}
-					manager.AddCache(pkg.Cache{
-						ID:          path,
-						Title:       route.Head.Title,
-						Description: route.Head.Description,
-						Favicon:     e.Config.FaviconPath,
-						Path:        path,
-						HTML:        html,
-						Body:        serverHTML,
-						CSS:         server.CSS,
-						JS:          client.JS,
-						CSSLinks:    cssLinks,
-						Expiration:  route.CacheExpiry | 0,
-					})
-
-					// Prepare template data
-					params = pkg.CreateTemplateData{
-						Title:           route.Head.Title,
-						Description:     route.Head.Description,
-						Favicon:         e.Config.FaviconPath,
-						CssLinks:        cssLinks,
-						JsLinks:         []template.HTML{}, // Populate with JS links if needed
-						RenderedContent: template.HTML(serverHTML),
-						JS:              template.JS(client.JS),
-						CSS:             template.CSS(server.CSS),
-						Dev:             e.Config.ENV != "production",
-					}
-					break
-				}
-			}
-
-			// Check if a matching route was found and HTML template is initialized
-			if html == nil {
-				e.Logger.Warn().Msgf("No matching route found for: %s", path)
-				return c.String(http.StatusNotFound, "Page not found")
-			}
-
-			// Render the template with parameters
-			if err := html.Execute(c.Response().Writer, params); err != nil {
-				e.Logger.Error().Msgf("Template execution error: %s", err)
-				return c.String(http.StatusInternalServerError, "Error rendering page")
-			}
-		} else {
+		// Check for cached page if in production mode
+		if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
 			return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
 				Title:           cachedItem.Title,
 				Description:     cachedItem.Description,
 				Favicon:         cachedItem.Favicon,
 				CssLinks:        cachedItem.CSSLinks,
-				JsLinks:         []template.HTML{}, // Populate with JS links if needed
 				RenderedContent: template.HTML(cachedItem.Body),
 				JS:              template.JS(cachedItem.JS),
 				CSS:             template.CSS(cachedItem.CSS),
@@ -244,7 +140,103 @@ func (e *Engine) InitializeFrontend() error {
 			})
 		}
 
-		return nil
+		// Route matching and template rendering
+		for _, route := range e.Config.Routes {
+			if route.Path != path {
+				continue
+			}
+
+			var props map[string]interface{}
+			if matched, routeParams := pkg.MatchPath(route.Path, path); matched && route.Props != nil {
+				props = route.Props(routeParams)
+			} else {
+				props = map[string]interface{}{}
+			}
+
+			var client, server pkg.BuildResult
+			var buildClientErr, buildServerErr error
+
+			g, _ := errgroup.WithContext(context.Background())
+
+			g.Go(func() error {
+				client, buildClientErr = job.BuildClient(props)
+				return buildClientErr
+			})
+
+			g.Go(func() error {
+				server, buildServerErr = job.BuildServer(route.Path, props)
+				return buildServerErr
+			})
+
+			// Wait for both functions to complete
+			if err := g.Wait(); err != nil {
+				if buildClientErr != nil {
+					e.Logger.Error().Msgf("Error building client: %s", buildClientErr)
+					return c.String(http.StatusInternalServerError, "Error building client")
+				}
+				if buildServerErr != nil {
+					e.Logger.Error().Msgf("Error building server: %s", buildServerErr)
+					return c.String(http.StatusInternalServerError, "Error building server")
+				}
+			}
+			server.CSS = fmt.Sprintf("%s\n%s", server.CSS, tailwindCSS)
+
+			serverHTML, err := pkg.RenderServer(server.JS, route.Path)
+			if err != nil {
+				e.Logger.Error().Msgf("Error rendering server HTML: %s", err)
+				return c.String(http.StatusInternalServerError, "Error rendering server HTML")
+			}
+
+			// Collect CSS and JS links
+			cssLinks := make([]template.HTML, len(route.Head.CssLinks))
+			for i, css := range route.Head.CssLinks {
+				cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
+			}
+			jsLinks := make([]template.HTML, len(route.Head.JsLinks))
+			for i, js := range route.Head.JsLinks {
+				jsLinks[i] = template.HTML(fmt.Sprintf("<script src=\"/assets/%s\" type=\"module\"></script>", js.Src))
+			}
+
+			// Load HTML template once
+			htmlTemplate, err := pkg.GetHTML()
+			if err != nil {
+				e.Logger.Error().Msgf("Template loading error: %s", err)
+				return c.String(http.StatusInternalServerError, "Error loading template")
+			}
+
+			cacheData := pkg.Cache{
+				ID:          path,
+				Title:       route.Head.Title,
+				Description: route.Head.Description,
+				Favicon:     e.Config.FaviconPath,
+				Path:        path,
+				HTML:        htmlTemplate,
+				Body:        serverHTML,
+				CSS:         server.CSS,
+				JS:          client.JS,
+				CSSLinks:    cssLinks,
+				Expiration:  route.CacheExpiry,
+			}
+			manager.AddCache(cacheData)
+
+			// Render response with template data
+			templateData := pkg.CreateTemplateData{
+				Title:           route.Head.Title,
+				Description:     route.Head.Description,
+				Favicon:         e.Config.FaviconPath,
+				CssLinks:        cssLinks,
+				JsLinks:         jsLinks,
+				RenderedContent: template.HTML(serverHTML),
+				JS:              template.JS(client.JS),
+				CSS:             template.CSS(server.CSS),
+				Dev:             e.Config.ENV != "production",
+			}
+
+			return htmlTemplate.Execute(c.Response().Writer, templateData)
+		}
+
+		e.Logger.Warn().Msgf("No matching route found for: %s", path)
+		return c.String(http.StatusNotFound, "Page not found")
 	})
 
 	return nil
