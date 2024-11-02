@@ -14,6 +14,7 @@ type Manager struct {
 type Cache struct {
 	ID          string
 	Title       string
+	Favicon     string
 	Description string
 	Path        string
 	HTML        *template.Template
@@ -36,7 +37,6 @@ func (m *Manager) AddCache(cache Cache) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	cache.Expiration = cache.Expiration
 	m.Cache = append(m.Cache, cache)
 }
 

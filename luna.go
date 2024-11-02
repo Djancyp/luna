@@ -126,7 +126,7 @@ func (e *Engine) InitializeFrontend() error {
 			return c.File(filepath.Join(e.Config.PublicPath, path))
 		}
 
-		if !found {
+		if !found || e.Config.ENV != "production" {
 			var html *template.Template
 			params := pkg.CreateTemplateData{}
 			// Loop through routes to find a matching path
@@ -177,6 +177,11 @@ func (e *Engine) InitializeFrontend() error {
 						cssLink := template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
 						cssLinks = append(cssLinks, cssLink)
 					}
+					var jsLinks []template.HTML
+					for _, js := range route.Head.JsLinks {
+						jsLink := template.HTML(fmt.Sprintf("<script src=\"/assets/%s\" type=\"module\"></script>", js.Src))
+						jsLinks = append(jsLinks, jsLink)
+					}
 
 					// Load the HTML template
 					html, err = pkg.GetHTML()
@@ -188,6 +193,7 @@ func (e *Engine) InitializeFrontend() error {
 						ID:          path,
 						Title:       route.Head.Title,
 						Description: route.Head.Description,
+						Favicon:     e.Config.FaviconPath,
 						Path:        path,
 						HTML:        html,
 						Body:        serverHTML,
@@ -201,6 +207,7 @@ func (e *Engine) InitializeFrontend() error {
 					params = pkg.CreateTemplateData{
 						Title:           route.Head.Title,
 						Description:     route.Head.Description,
+						Favicon:         e.Config.FaviconPath,
 						CssLinks:        cssLinks,
 						JsLinks:         []template.HTML{}, // Populate with JS links if needed
 						RenderedContent: template.HTML(serverHTML),
@@ -224,10 +231,10 @@ func (e *Engine) InitializeFrontend() error {
 				return c.String(http.StatusInternalServerError, "Error rendering page")
 			}
 		} else {
-			fmt.Println("cachedItem")
 			return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
 				Title:           cachedItem.Title,
 				Description:     cachedItem.Description,
+				Favicon:         cachedItem.Favicon,
 				CssLinks:        cachedItem.CSSLinks,
 				JsLinks:         []template.HTML{}, // Populate with JS links if needed
 				RenderedContent: template.HTML(cachedItem.Body),
