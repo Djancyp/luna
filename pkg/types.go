@@ -8,6 +8,7 @@ type ReactRoute struct {
 	Head        Head
 	Props       func(params ...map[string]string) map[string]interface{}
 }
+type Store func() map[string]interface{}
 
 type Head struct {
 	Title       string

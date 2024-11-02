@@ -125,20 +125,27 @@ func (e *Engine) InitializeFrontend() error {
 		if filepath.Ext(path) != "" {
 			return c.File(filepath.Join(e.Config.PublicPath, path))
 		}
+    var store map[string]interface{}
+
+    if e.Config.Store != nil {
+      store = e.Config.Store()
+    }
+
+
 
 		// Check for cached page if in production mode
-		if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
-			return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
-				Title:           cachedItem.Title,
-				Description:     cachedItem.Description,
-				Favicon:         cachedItem.Favicon,
-				CssLinks:        cachedItem.CSSLinks,
-				RenderedContent: template.HTML(cachedItem.Body),
-				JS:              template.JS(cachedItem.JS),
-				CSS:             template.CSS(cachedItem.CSS),
-				Dev:             e.Config.ENV != "production",
-			})
-		}
+		// if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
+		// 	return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
+		// 		Title:           cachedItem.Title,
+		// 		Description:     cachedItem.Description,
+		// 		Favicon:         cachedItem.Favicon,
+		// 		CssLinks:        cachedItem.CSSLinks,
+		// 		RenderedContent: template.HTML(cachedItem.Body),
+		// 		JS:              template.JS(cachedItem.JS),
+		// 		CSS:             template.CSS(cachedItem.CSS),
+		// 		Dev:             e.Config.ENV != "production",
+		// 	})
+		// }
 
 		// Route matching and template rendering
 		for _, route := range e.Config.Routes {
@@ -159,12 +166,12 @@ func (e *Engine) InitializeFrontend() error {
 			g, _ := errgroup.WithContext(context.Background())
 
 			g.Go(func() error {
-				client, buildClientErr = job.BuildClient(props)
+				client, buildClientErr = job.BuildClient(props, store)
 				return buildClientErr
 			})
 
 			g.Go(func() error {
-				server, buildServerErr = job.BuildServer(route.Path, props)
+				server, buildServerErr = job.BuildServer(route.Path, props,store)
 				return buildServerErr
 			})
 

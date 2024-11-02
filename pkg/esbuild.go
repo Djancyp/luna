@@ -100,9 +100,16 @@ var Loader = map[string]esbuild.Loader{
 	".html":  esbuild.LoaderFile,
 }
 
-func (j JobRunner) BuildClient(props map[string]interface{}) (BuildResult, error) {
+func (j JobRunner) BuildClient(props map[string]interface{}, store map[string]interface{}) (BuildResult, error) {
 	env := j.Env
+	if store == nil {
+		store = map[string]interface{}{}
+	}
 	jsonProps, error := json.Marshal(props)
+	if error != nil {
+		return BuildResult{}, error
+	}
+	jsonStore, error := json.Marshal(store)
 	if error != nil {
 		return BuildResult{}, error
 	}
@@ -119,6 +126,7 @@ func (j JobRunner) BuildClient(props map[string]interface{}) (BuildResult, error
 		Loader:            Loader,
 		Define: map[string]string{
 			"props": string(jsonProps),
+			"store": string(jsonStore),
 		},
 	})
 
@@ -140,9 +148,18 @@ func (j JobRunner) BuildClient(props map[string]interface{}) (BuildResult, error
 	return result, nil
 }
 
-func (j JobRunner) BuildServer(path string, props map[string]interface{}) (BuildResult, error) {
+func (j JobRunner) BuildServer(path string, props map[string]interface{}, store map[string]interface{}) (BuildResult, error) {
 	env := j.Env
+
+	if store == nil {
+		store = map[string]interface{}{}
+	}
 	jsonProps, error := json.Marshal(props)
+	if error != nil {
+		panic(error)
+	}
+
+	jsonStore, error := json.Marshal(store)
 	if error != nil {
 		panic(error)
 	}
@@ -161,6 +178,7 @@ func (j JobRunner) BuildServer(path string, props map[string]interface{}) (Build
 		MinifySyntax:      env == "production",
 		Define: map[string]string{
 			"props": string(jsonProps),
+			"store": string(jsonStore),
 		},
 		Banner: map[string]string{
 			"js": textEncoderPolyfill + processPolyfill + consolePolyfill,

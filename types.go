@@ -38,5 +38,6 @@ type Config struct {
 	PublicPath          string `default:"public/"`
 	TailwindCSS         bool   `default:"false"`
 	HotReloadServerPort int    `default:"8080"`
+  Store               pkg.Store
 	Routes              []pkg.ReactRoute
 }
