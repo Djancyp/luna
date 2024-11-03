@@ -132,18 +132,18 @@ func (e *Engine) InitializeFrontend() error {
 		}
 
 		// Check for cached page if in production mode
-		// if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
-		// 	return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
-		// 		Title:           cachedItem.Title,
-		// 		Description:     cachedItem.Description,
-		// 		Favicon:         cachedItem.Favicon,
-		// 		CssLinks:        cachedItem.CSSLinks,
-		// 		RenderedContent: template.HTML(cachedItem.Body),
-		// 		JS:              template.JS(cachedItem.JS),
-		// 		CSS:             template.CSS(cachedItem.CSS),
-		// 		Dev:             e.Config.ENV != "production",
-		// 	})
-		// }
+		if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
+			return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
+				Title:           cachedItem.Title,
+				Description:     cachedItem.Description,
+				Favicon:         cachedItem.Favicon,
+				CssLinks:        cachedItem.CSSLinks,
+				RenderedContent: template.HTML(cachedItem.Body),
+				JS:              template.JS(cachedItem.JS),
+				CSS:             template.CSS(cachedItem.CSS),
+				Dev:             e.Config.ENV != "production",
+			})
+		}
 
 		// Route matching and template rendering
 		for _, route := range e.Config.Routes {
