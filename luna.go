@@ -25,19 +25,35 @@ func New(config Config) (*Engine, error) {
 	server.Use(middleware.GzipWithConfig(middleware.GzipConfig{
 		Level: 5,
 	}))
-	server.POST("/props", func(c echo.Context) error {
+	server.POST("/navigate", func(c echo.Context) error {
+		// check middleware
 		body := PropsResponse{}
 		if err := c.Bind(&body); err != nil {
 			return err
 		}
 		to := body.Path
 		props := make(map[string]interface{})
+		handler := func(c echo.Context) error {
+			return c.JSON(http.StatusOK, props)
+		}
 		for _, route := range config.Routes {
 			if route.Path == to && route.Props != nil {
-				props[to] = route.Props()
+				fmt.Println("route")
+
+				handler = func(c echo.Context) error {
+					props[to] = route.Props()
+					return nil
+				}
+				if route.Middleware != nil {
+					fmt.Println("middleware")
+					for _, middleware := range route.Middleware {
+						handler = middleware(handler) // Wrap the handler with each middleware
+					}
+				}
+				handler(c)
 			}
 		}
-		return c.JSON(200, props)
+		return c.JSON(http.StatusOK, props)
 
 	})
 

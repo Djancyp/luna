@@ -60,11 +60,11 @@ func TestNew(t *testing.T) {
 	// Test the /props endpoint
 	reqBody := luna.PropsResponse{Path: "/test"}
 	body, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/props", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/navigate", bytes.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 	c := app.Server.NewContext(req, rec)
-	app.Server.Router().Find(http.MethodPost, "/props", c)
+	app.Server.Router().Find(http.MethodPost, "/navigate", c)
 	// Execute request
 	err = c.Handler()(c) // Directly call the handler
 	assert.NoError(t, err)
