@@ -1,12 +1,17 @@
 package pkg
 
-import "html/template"
+import (
+	"html/template"
+
+	"github.com/labstack/echo/v4"
+)
 
 type ReactRoute struct {
 	Path        string
 	CacheExpiry int64
 	Head        Head
 	Props       func(params ...map[string]string) map[string]interface{}
+	Middleware  []echo.MiddlewareFunc
 }
 type Store func() map[string]interface{}
 
