@@ -8,12 +8,13 @@ import (
 const templateHTML = `<!doctype html>
 <html lang="en">
   <head>
-
     <meta charset="UTF-8" />
     {{if .Description}}
     <meta name="description" content="{{ .Description }}" />
     {{end}}
-    <link rel="icon" type="image/svg+xml" href="/luna.svg" />
+    {{if .Favicon}}
+    <link rel="icon" type="image/svg+xml" href="{{ .Favicon }}" />
+    {{end}}
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     {{if .Title}}
     <title>{{.Title}}</title>
@@ -68,6 +69,7 @@ func GetHTML() (*template.Template, error) {
 type CreateTemplateData struct {
 	Title           string
 	Description     string
+  Favicon         string
 	CssLinks        []template.HTML
 	JsLinks         []template.HTML
 	CSS             template.CSS

@@ -14,10 +14,11 @@ Luna is a Golang-based framework that leverages the Echo web framework for serve
 - [License](#license)
 
 ## Features
-- **Server-Side Rendering**: Offers SSR for React, improving SEO and initial load times.
-- **Simple Setup**: Luna integrates Echo and React, simplifying routing, API setup, and state management.
-- **Hot Reloading**: Enables quick development feedback with automatic reloading on file changes.
-- **Powerful Middleware**: Use Echo’s extensive middleware ecosystem to manage authentication, logging, and more.
+- Full backend api support with Echo
+- SSR with React
+- Hot reloading development
+- Route based caching
+- Custom Middleware support
 
 ## Getting Started
 

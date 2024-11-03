@@ -33,9 +33,11 @@ type Config struct {
 	RootPath            string `default:"frontend/"`
 	ServerEntryPoint    string `default:"frontend/src/entry-client.tsx"`
 	ClientEntryPoint    string `default:"frontend/src/entry-server.tsx"`
+  FaviconPath         string `default:"frontend/src/assets/favicon.ico"`
 	AssetsPath          string `default:"frontend/src/assets/"`
 	PublicPath          string `default:"public/"`
 	TailwindCSS         bool   `default:"false"`
 	HotReloadServerPort int    `default:"8080"`
+  Store               pkg.Store
 	Routes              []pkg.ReactRoute
 }
