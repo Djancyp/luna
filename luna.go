@@ -172,7 +172,6 @@ func (e *Engine) InitializeFrontend() error {
 			protocol = "wss" // Use wss if the page is served over HTTPS
 		}
 		swUrl := fmt.Sprintf("%s://%s:%d/ws", protocol, baseURL, e.Config.HotReloadServerPort)
-		fmt.Println("swUrl", swUrl)
 
 		// Check for cached page if in production mode
 		if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
