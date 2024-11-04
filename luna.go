@@ -164,6 +164,11 @@ func (e *Engine) InitializeFrontend() error {
 		if e.Config.Store != nil {
 			store = e.Config.Store(c)
 		}
+		baseURL := c.Request().Host
+		// clean base url if has port
+		baseURL = strings.Split(baseURL, ":")[0]
+		swUrl := fmt.Sprintf("ws://%s:%d/ws", baseURL, e.Config.HotReloadServerPort)
+		fmt.Println("swUrl", swUrl)
 
 		// Check for cached page if in production mode
 		if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
@@ -176,6 +181,7 @@ func (e *Engine) InitializeFrontend() error {
 				JS:              template.JS(cachedItem.JS),
 				CSS:             template.CSS(cachedItem.CSS),
 				Dev:             e.Config.ENV != "production",
+				SWUrl:           swUrl,
 			})
 		}
 
@@ -274,6 +280,7 @@ func (e *Engine) InitializeFrontend() error {
 					JS:              template.JS(client.JS),
 					CSS:             template.CSS(server.CSS),
 					Dev:             e.Config.ENV != "production",
+					SWUrl: swUrl,
 				}
 
 				return htmlTemplate.Execute(c.Response().Writer, templateData)

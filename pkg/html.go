@@ -35,7 +35,7 @@ const templateHTML = `<!doctype html>
 
     {{if .Dev}}
     <script>
-      let socket = new WebSocket("ws://127.0.0.1:3000/ws");
+      let socket = new WebSocket("{{ .SWUrl }}");
       socket.onopen = () => {
       socket.send(1);
       };
@@ -76,6 +76,7 @@ type CreateTemplateData struct {
 	JS              template.JS
 	RenderedContent template.HTML
 	Dev             bool
+  SWUrl           string
 }
 
 func CreateTemplate(data CreateTemplateData) (*template.Template, error) {
