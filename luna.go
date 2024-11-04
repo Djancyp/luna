@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Djancyp/luna/pkg"
 	"github.com/Djancyp/luna/utils"
@@ -116,10 +117,13 @@ func (e *Engine) CheckApp(config Config) error {
 	if config.ENV != "production" {
 		for _, route := range config.Routes {
 			for _, css := range *&route.Head.CssLinks {
-				err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, css.Href))
-				if err != nil {
-					e.Logger.Error().Msgf("Css file not found: %s", config.AssetsPath+css.Href)
-					os.Exit(1)
+				if !strings.Contains(css.Href, "https") {
+
+					err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, css.Href))
+					if err != nil {
+						e.Logger.Error().Msgf("Css file not found: %s", config.AssetsPath+css.Href)
+						os.Exit(1)
+					}
 				}
 			}
 			for _, js := range *&route.Head.JsLinks {
@@ -159,7 +163,7 @@ func (e *Engine) InitializeFrontend() error {
 		var store map[string]interface{}
 
 		if e.Config.Store != nil {
-			store = e.Config.Store()
+			store = e.Config.Store(c)
 		}
 
 		// Check for cached page if in production mode
@@ -226,7 +230,12 @@ func (e *Engine) InitializeFrontend() error {
 				// Collect CSS and JS links
 				cssLinks := make([]template.HTML, len(route.Head.CssLinks))
 				for i, css := range route.Head.CssLinks {
-					cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
+					// Check if css is a third-party link by looking for "https" in the URL
+					if strings.Contains(css.Href, "https") {
+						cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"%s\" rel=\"stylesheet\" />", css.Href))
+					} else {
+						cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
+					}
 				}
 				jsLinks := make([]template.HTML, len(route.Head.JsLinks))
 				for i, js := range route.Head.JsLinks {

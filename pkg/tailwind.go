@@ -14,17 +14,6 @@ const tailwindCSSInput = `
 @tailwind utilities;
 `
 
-// Tailwind configuration in JSON format (customize paths and settings as needed)
-const tailwindConfig = `
-export default {
-  content: ["./frontend/src/**/*.tsx"],
-  theme: {
-    extend: {}
-  },
-  plugins: []
-}
-`
-
 func Tailwind(baseDir string) string {
 	// Create a temporary directory for the virtual files
 	tempDir := os.TempDir()
