@@ -16,8 +16,14 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func New(config Config) (*Engine, error) {
+type NavigateRequest struct {
+	Path        string                 `json:"path"`
+	Props       map[string]interface{} `json:"props"`
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+}
 
+func New(config Config) (*Engine, error) {
 	server := echo.New()
 	server.Static("/assets", config.AssetsPath)
 	// make static public
@@ -33,15 +39,24 @@ func New(config Config) (*Engine, error) {
 		}
 		to := body.Path
 		props := make(map[string]interface{})
+		res := NavigateRequest{}
 		handler := func(c echo.Context) error {
 			return c.JSON(http.StatusOK, props)
 		}
 		for _, route := range config.Routes {
-			if route.Path == to && route.Props != nil {
-				fmt.Println("route")
-
+			if route.Path == to {
+				p := make(map[string]interface{})
+				if route.Props != nil {
+					p = route.Props()
+				} else {
+					p = make(map[string]interface{})
+				}
 				handler = func(c echo.Context) error {
-					props[to] = route.Props()
+					props[to] = p
+					res.Path = to
+					res.Props = props
+					res.Title = route.Head.Title
+					res.Description = route.Head.Description
 					return nil
 				}
 				if route.Middleware != nil {
@@ -53,7 +68,7 @@ func New(config Config) (*Engine, error) {
 				handler(c)
 			}
 		}
-		return c.JSON(http.StatusOK, props)
+		return c.JSON(http.StatusOK, res)
 
 	})
 
