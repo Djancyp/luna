@@ -17,6 +17,9 @@ const tailwindCSSInput = `
 func Tailwind(baseDir string) string {
 	// Create a temporary directory for the virtual files
 	tempDir := os.TempDir()
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		log.Fatalf("Failed to create tempDir: %v", err)
+	}
 	defer os.RemoveAll(tempDir) // Clean up after we're done
 
 	// Paths for temporary files
