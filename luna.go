@@ -167,7 +167,11 @@ func (e *Engine) InitializeFrontend() error {
 		baseURL := c.Request().Host
 		// clean base url if has port
 		baseURL = strings.Split(baseURL, ":")[0]
-		swUrl := fmt.Sprintf("ws://%s:%d/ws", baseURL, e.Config.HotReloadServerPort)
+		protocol := "ws"
+		if c.Request().TLS != nil {
+			protocol = "wss" // Use wss if the page is served over HTTPS
+		}
+		swUrl := fmt.Sprintf("%s://%s:%d/ws", protocol, baseURL, e.Config.HotReloadServerPort)
 		fmt.Println("swUrl", swUrl)
 
 		// Check for cached page if in production mode
@@ -280,7 +284,7 @@ func (e *Engine) InitializeFrontend() error {
 					JS:              template.JS(client.JS),
 					CSS:             template.CSS(server.CSS),
 					Dev:             e.Config.ENV != "production",
-					SWUrl: swUrl,
+					SWUrl:           swUrl,
 				}
 
 				return htmlTemplate.Execute(c.Response().Writer, templateData)
