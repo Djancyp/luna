@@ -61,7 +61,6 @@ func New(config Config) (*Engine, error) {
 					return nil
 				}
 				if route.Middleware != nil {
-					fmt.Println("middleware")
 					for _, middleware := range route.Middleware {
 						handler = middleware(handler) // Wrap the handler with each middleware
 					}
