@@ -13,7 +13,7 @@ type ReactRoute struct {
 	Props       func(params ...map[string]string) map[string]interface{}
 	Middleware  []echo.MiddlewareFunc
 }
-type Store func() map[string]interface{}
+type Store func(c echo.Context) map[string]interface{}
 
 type Head struct {
 	Title       string

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Djancyp/luna/pkg"
 	"github.com/Djancyp/luna/utils"
@@ -16,8 +17,14 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func New(config Config) (*Engine, error) {
+type NavigateRequest struct {
+	Path        string                 `json:"path"`
+	Props       map[string]interface{} `json:"props"`
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+}
 
+func New(config Config) (*Engine, error) {
 	server := echo.New()
 	server.Static("/assets", config.AssetsPath)
 	// make static public
@@ -33,19 +40,27 @@ func New(config Config) (*Engine, error) {
 		}
 		to := body.Path
 		props := make(map[string]interface{})
+		res := NavigateRequest{}
 		handler := func(c echo.Context) error {
 			return c.JSON(http.StatusOK, props)
 		}
 		for _, route := range config.Routes {
-			if route.Path == to && route.Props != nil {
-				fmt.Println("route")
-
+			if route.Path == to {
+				p := make(map[string]interface{})
+				if route.Props != nil {
+					p = route.Props()
+				} else {
+					p = make(map[string]interface{})
+				}
 				handler = func(c echo.Context) error {
-					props[to] = route.Props()
+					props[to] = p
+					res.Path = to
+					res.Props = props
+					res.Title = route.Head.Title
+					res.Description = route.Head.Description
 					return nil
 				}
 				if route.Middleware != nil {
-					fmt.Println("middleware")
 					for _, middleware := range route.Middleware {
 						handler = middleware(handler) // Wrap the handler with each middleware
 					}
@@ -53,7 +68,7 @@ func New(config Config) (*Engine, error) {
 				handler(c)
 			}
 		}
-		return c.JSON(http.StatusOK, props)
+		return c.JSON(http.StatusOK, res)
 
 	})
 
@@ -101,10 +116,13 @@ func (e *Engine) CheckApp(config Config) error {
 	if config.ENV != "production" {
 		for _, route := range config.Routes {
 			for _, css := range *&route.Head.CssLinks {
-				err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, css.Href))
-				if err != nil {
-					e.Logger.Error().Msgf("Css file not found: %s", config.AssetsPath+css.Href)
-					os.Exit(1)
+				if !strings.Contains(css.Href, "https") {
+
+					err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, css.Href))
+					if err != nil {
+						e.Logger.Error().Msgf("Css file not found: %s", config.AssetsPath+css.Href)
+						os.Exit(1)
+					}
 				}
 			}
 			for _, js := range *&route.Head.JsLinks {
@@ -144,7 +162,7 @@ func (e *Engine) InitializeFrontend() error {
 		var store map[string]interface{}
 
 		if e.Config.Store != nil {
-			store = e.Config.Store()
+			store = e.Config.Store(c)
 		}
 
 		// Check for cached page if in production mode
@@ -211,7 +229,12 @@ func (e *Engine) InitializeFrontend() error {
 				// Collect CSS and JS links
 				cssLinks := make([]template.HTML, len(route.Head.CssLinks))
 				for i, css := range route.Head.CssLinks {
-					cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
+					// Check if css is a third-party link by looking for "https" in the URL
+					if strings.Contains(css.Href, "https") {
+						cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"%s\" rel=\"stylesheet\" />", css.Href))
+					} else {
+						cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
+					}
 				}
 				jsLinks := make([]template.HTML, len(route.Head.JsLinks))
 				for i, js := range route.Head.JsLinks {
