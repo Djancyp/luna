@@ -69,7 +69,6 @@ func New(config Config) (*Engine, error) {
 			}
 		}
 		return c.JSON(http.StatusOK, res)
-
 	})
 
 	app := &Engine{
@@ -168,9 +167,6 @@ func (e *Engine) InitializeFrontend() error {
 		// clean base url if has port
 		baseURL = strings.Split(baseURL, ":")[0]
 		protocol := "ws"
-		if c.Request().TLS != nil {
-			protocol = "wss" // Use wss if the page is served over HTTPS
-		}
 		swUrl := fmt.Sprintf("%s://%s:%d/ws", protocol, baseURL, e.Config.HotReloadServerPort)
 
 		// Check for cached page if in production mode
@@ -329,6 +325,7 @@ func (e *Engine) PATCH(path string, h echo.HandlerFunc, m ...echo.MiddlewareFunc
 func (e *Engine) Start(address string) {
 	e.Server.Logger.Fatal(e.Server.Start(address))
 }
+
 func (e *Engine) Group(prefix string, m ...echo.MiddlewareFunc) *echo.Group {
 	return e.Server.Group(prefix, m...)
 }

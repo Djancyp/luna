@@ -20,8 +20,6 @@ func Tailwind(baseDir string) string {
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		log.Fatalf("Failed to create tempDir: %v", err)
 	}
-	defer os.RemoveAll(tempDir) // Clean up after we're done
-
 	// Paths for temporary files
 	inputCSSPath := filepath.Join(tempDir, "input.css")
 	config := filepath.Join(baseDir, "tailwind.config.js")
