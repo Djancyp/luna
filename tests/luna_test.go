@@ -22,7 +22,7 @@ func TestNew(t *testing.T) {
 		Routes: []pkg.ReactRoute{
 			{
 				Path: "/test",
-				Props: func(_ ...map[string]string) map[string]interface{} {
+				Props: func(_ echo.Context, _ map[string]string) map[string]interface{} {
 					return map[string]interface{}{
 						"name": "Test Route",
 						"id":   123,

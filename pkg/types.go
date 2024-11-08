@@ -10,7 +10,7 @@ type ReactRoute struct {
 	Path        string
 	CacheExpiry int64
 	Head        Head
-	Props       func(params ...map[string]string) map[string]interface{}
+	Props       func(c echo.Context, params map[string]string) map[string]interface{}
 	Middleware  []echo.MiddlewareFunc
 }
 type Store func(c echo.Context) map[string]interface{}

@@ -45,10 +45,11 @@ func New(config Config) (*Engine, error) {
 			return c.JSON(http.StatusOK, props)
 		}
 		for _, route := range config.Routes {
-			if route.Path == to {
+			matched, params := pkg.MatchPath(route.Path, to)
+			if matched || route.Path == to {
 				p := make(map[string]interface{})
 				if route.Props != nil {
-					p = route.Props()
+					p = route.Props(c, params)
 				} else {
 					p = make(map[string]interface{})
 				}
@@ -186,13 +187,14 @@ func (e *Engine) InitializeFrontend() error {
 
 		// Route matching and template rendering
 		for _, route := range e.Config.Routes {
-			if route.Path != path {
+			if matched, _ := pkg.MatchPath(route.Path, path); !matched && route.Path != path {
 				continue
 			}
 			handler := func(c echo.Context) error {
+				_, params := pkg.MatchPath(route.Path, path)
 				var props map[string]interface{}
-				if matched, routeParams := pkg.MatchPath(route.Path, path); matched && route.Props != nil {
-					props = route.Props(routeParams)
+				if route.Props != nil {
+					props = route.Props(c, params)
 				} else {
 					props = map[string]interface{}{}
 				}
