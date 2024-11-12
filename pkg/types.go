@@ -15,6 +15,11 @@ type ReactRoute struct {
 }
 type Store func(c echo.Context) map[string]interface{}
 
+type MainHead struct {
+	Attributes []string
+	MetaTags   []MetaTag
+}
+
 type Head struct {
 	Title       string
 	Description string

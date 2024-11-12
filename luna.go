@@ -170,6 +170,14 @@ func (e *Engine) InitializeFrontend() error {
 		protocol := "ws"
 		swUrl := fmt.Sprintf("%s://%s:%d/ws", protocol, baseURL, e.Config.HotReloadServerPort)
 
+		// add main css or js
+		// convert aattributes to html
+
+		attributes := make([]template.HTML, len(e.Config.Head.Attributes))
+		for i, attr := range e.Config.Head.Attributes {
+			attributes[i] = template.HTML(attr)
+		}
+
 		// Check for cached page if in production mode
 		if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
 			return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
@@ -282,6 +290,7 @@ func (e *Engine) InitializeFrontend() error {
 					CSS:             template.CSS(server.CSS),
 					Dev:             e.Config.ENV != "production",
 					SWUrl:           swUrl,
+					MainHead:        attributes,
 				}
 
 				return htmlTemplate.Execute(c.Response().Writer, templateData)

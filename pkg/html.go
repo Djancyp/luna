@@ -12,6 +12,9 @@ const templateHTML = `<!doctype html>
     {{if .Description}}
     <meta name="description" content="{{ .Description }}" />
     {{end}}
+		{{ range .MainHead }}
+		{{ . }}
+		{{ end }}
     {{if .Favicon}}
     <link rel="icon" type="image/svg+xml" href="{{ .Favicon }}" />
     {{end}}
@@ -69,18 +72,18 @@ func GetHTML() (*template.Template, error) {
 type CreateTemplateData struct {
 	Title           string
 	Description     string
-  Favicon         string
+	Favicon         string
 	CssLinks        []template.HTML
 	JsLinks         []template.HTML
 	CSS             template.CSS
 	JS              template.JS
 	RenderedContent template.HTML
 	Dev             bool
-  SWUrl           string
+	SWUrl           string
+	MainHead        []template.HTML
 }
 
 func CreateTemplate(data CreateTemplateData) (*template.Template, error) {
-
 	// Parse the base template
 	tmpl, err := GetHTML()
 	if err != nil {
@@ -100,5 +103,4 @@ func CreateTemplate(data CreateTemplateData) (*template.Template, error) {
 	}
 
 	return baseTemplate, nil
-
 }
