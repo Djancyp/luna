@@ -190,6 +190,7 @@ func (e *Engine) InitializeFrontend() error {
 				CSS:             template.CSS(cachedItem.CSS),
 				Dev:             e.Config.ENV != "production",
 				SWUrl:           swUrl,
+				MainHead:        attributes,
 			})
 		}
 
