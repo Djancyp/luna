@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/Djancyp/luna/pkg"
 	"github.com/Djancyp/luna/utils"
@@ -71,67 +72,80 @@ func New(config Config) (*Engine, error) {
 		}
 		return c.JSON(http.StatusOK, res)
 	})
-
 	app := &Engine{
 		Logger: zerolog.New(os.Stdout).With().Timestamp().Logger(),
 		Server: server,
 		Config: config,
 	}
-
 	if config.ENV != "production" {
 		app.HotReload = newHotReload(app)
 		app.HotReload.Start(config.RootPath)
 	}
-
 	app.CheckApp(config)
 	return app, nil
 }
 
 func (e *Engine) CheckApp(config Config) error {
-	err := utils.IsFolderExist(config.AssetsPath)
-	if err != nil {
-		e.Logger.Error().Msgf("Assets folder not found: %s", config.AssetsPath)
-		// stop the app no panic
-		os.Exit(1)
-	}
+	var wg sync.WaitGroup
+	errCh := make(chan error, 10) // Buffered channel to collect errors
 
-	err = utils.IsFileExist(config.ServerEntryPoint)
-	if err != nil {
-		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.ServerEntryPoint)
-		os.Exit(1)
-	}
-	err = utils.IsFileExist(config.ClientEntryPoint)
-	if err != nil {
-		e.Logger.Error().Msgf("EnteryPoint file not found: %s", config.ClientEntryPoint)
-		os.Exit(1)
-	}
-	if config.TailwindCSS != false {
-		err = utils.IsFileExist(config.RootPath + "tailwind.config.js")
+	// Helper function to handle file/folder existence checks and send errors
+	checkExistence := func(path string, isFolder bool, errMsg string) {
+		defer wg.Done()
+		var err error
+		if isFolder {
+			err = utils.IsFolderExist(path)
+		} else {
+			err = utils.IsFileExist(path)
+		}
 		if err != nil {
-			e.Logger.Error().Msgf("TailwindCSS file not found: tailwind.config.js")
-			os.Exit(1)
+			e.Logger.Error().Msgf(errMsg, path)
+			errCh <- err // Send error to the channel
 		}
 	}
 
+	// Check the assets folder
+	wg.Add(1)
+	go checkExistence(config.AssetsPath, true, "Assets folder not found: %s")
+
+	// Check server and client entry points
+	wg.Add(1)
+	go checkExistence(config.ServerEntryPoint, false, "EntryPoint file not found: %s")
+	wg.Add(1)
+	go checkExistence(config.ClientEntryPoint, false, "EntryPoint file not found: %s")
+
+	// Check TailwindCSS file if required
+	if config.TailwindCSS {
+		wg.Add(1)
+		go checkExistence(config.RootPath+"tailwind.config.js", false, "TailwindCSS file not found: %s")
+	}
+
+	// Additional checks for routes in non-production environments
 	if config.ENV != "production" {
 		for _, route := range config.Routes {
-			for _, css := range *&route.Head.CssLinks {
+			// Check CSS files
+			for _, css := range route.Head.CssLinks {
 				if !strings.Contains(css.Href, "https") {
+					wg.Add(1)
+					go checkExistence(config.AssetsPath+"/"+css.Href, false, "Css file not found: %s")
+				}
+			}
+			// Check JS files
+			for _, js := range route.Head.JsLinks {
+				wg.Add(1)
+				go checkExistence(config.AssetsPath+"/"+js.Src, false, "Js file not found: %s")
+			}
+		}
+	}
 
-					err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, css.Href))
-					if err != nil {
-						e.Logger.Error().Msgf("Css file not found: %s", config.AssetsPath+css.Href)
-						os.Exit(1)
-					}
-				}
-			}
-			for _, js := range *&route.Head.JsLinks {
-				err = utils.IsFileExist(fmt.Sprintf("%s/%s", config.AssetsPath, js.Src))
-				if err != nil {
-					e.Logger.Error().Msgf("Js file not found: %s", config.AssetsPath+js.Src)
-					os.Exit(1)
-				}
-			}
+	// Wait for all checks to finish
+	wg.Wait()
+	close(errCh)
+
+	// Collect errors, if any
+	for err := range errCh {
+		if err != nil {
+			return err // Return the first error encountered
 		}
 	}
 
@@ -178,28 +192,27 @@ func (e *Engine) InitializeFrontend() error {
 			attributes[i] = template.HTML(attr)
 		}
 
-		// Check for cached page if in production mode
-		if cachedItem, found := manager.GetCache(path); found && e.Config.ENV == "production" {
-			return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
-				Title:           cachedItem.Title,
-				Description:     cachedItem.Description,
-				Favicon:         cachedItem.Favicon,
-				CssLinks:        cachedItem.CSSLinks,
-				RenderedContent: template.HTML(cachedItem.Body),
-				JS:              template.JS(cachedItem.JS),
-				CSS:             template.CSS(cachedItem.CSS),
-				Dev:             e.Config.ENV != "production",
-				SWUrl:           swUrl,
-				MainHead:        attributes,
-			})
-		}
-
 		// Route matching and template rendering
 		for _, route := range e.Config.Routes {
 			if matched, _ := pkg.MatchPath(route.Path, path); !matched && route.Path != path {
 				continue
 			}
 			handler := func(c echo.Context) error {
+				if cachedItem, found := manager.GetCache(path); found {
+					// Check for cached page if in production mode
+					return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
+						Title:           cachedItem.Title,
+						Description:     cachedItem.Description,
+						Favicon:         cachedItem.Favicon,
+						CssLinks:        cachedItem.CSSLinks,
+						RenderedContent: template.HTML(cachedItem.Body),
+						JS:              template.JS(cachedItem.JS),
+						CSS:             template.CSS(cachedItem.CSS),
+						Dev:             e.Config.ENV != "production",
+						SWUrl:           swUrl,
+						MainHead:        attributes,
+					})
+				}
 				_, params := pkg.MatchPath(route.Path, path)
 				var props map[string]interface{}
 				if route.Props != nil {
