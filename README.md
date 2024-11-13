@@ -309,6 +309,13 @@ To contribute:
 
 Please make sure to update tests as appropriate and adhere to the code of conduct in all interactions.
 
+
+## Special Thanks
+
+- [Echo](https://echo.labstack.com/)
+- [Esbuild](https://esbuild.github.io/)
+- [Quickjs-go](https://github.com/buke/quickjs-go)
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more information.
