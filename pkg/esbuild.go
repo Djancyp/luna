@@ -116,8 +116,9 @@ func (j JobRunner) BuildClient(props map[string]interface{}, store map[string]in
 		MinifySyntax:      env == "production",
 		Loader:            Loader,
 		Define: map[string]string{
-			"props": string(jsonProps),
-			"store": string(jsonStore),
+			"props":  string(jsonProps),
+			"store":  string(jsonStore),
+			"global": "globalThis",
 		},
 	})
 
@@ -167,8 +168,9 @@ func (j JobRunner) BuildServer(path string, props map[string]interface{}, store 
 		MinifyIdentifiers: env == "production",
 		MinifySyntax:      env == "production",
 		Define: map[string]string{
-			"props": string(jsonProps),
-			"store": string(jsonStore),
+			"props":  string(jsonProps),
+			"store":  string(jsonStore),
+			"global": "globalThis",
 		},
 		Banner: map[string]string{
 			"js": textEncoderPolyfill + processPolyfill + consolePolyfill,
