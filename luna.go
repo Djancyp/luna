@@ -79,10 +79,10 @@ func New(config Config) (*Engine, error) {
 		Server: server,
 		Config: config,
 	}
-	// if config.ENV != "production" {
-	// 	app.HotReload = newHotReload(app)
-	// 	app.HotReload.Start(config.RootPath)
-	// }
+	if config.ENV != "production" {
+		app.HotReload = newHotReload(app)
+		app.HotReload.Start(config.RootPath)
+	}
 	app.CheckApp(config)
 	return app, nil
 }
