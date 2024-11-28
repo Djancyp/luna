@@ -90,19 +90,8 @@ var Loader = map[string]esbuild.Loader{
 	".html":  esbuild.LoaderFile,
 }
 
-func (j JobRunner) BuildClient(props map[string]interface{}, store map[string]interface{}) (BuildResult, error) {
+func (j JobRunner) BuildClient() (BuildResult, error) {
 	env := j.Env
-	// if store == nil {
-	// 	store = map[string]interface{}{}
-	// }
-	// jsonProps, error := json.Marshal(props)
-	// if error != nil {
-	// 	return BuildResult{}, error
-	// }
-	// jsonStore, error := json.Marshal(store)
-	// if error != nil {
-	// 	return BuildResult{}, error
-	// }
 	opt := esbuild.Build(esbuild.BuildOptions{
 		EntryPoints:       []string{j.ClientEntryPoint},
 		Outdir:            "/",
@@ -116,11 +105,6 @@ func (j JobRunner) BuildClient(props map[string]interface{}, store map[string]in
 		MinifySyntax:      env == "production",
 		KeepNames:         true,
 		Loader:            Loader,
-		// Define: map[string]string{
-		// 	"props":  string(jsonProps),
-		// 	"store":  string(jsonStore),
-		// 	"global": "globalThis",
-		// },
 	})
 
 	if len(opt.Errors) > 0 {
@@ -140,21 +124,8 @@ func (j JobRunner) BuildClient(props map[string]interface{}, store map[string]in
 	return result, nil
 }
 
-func (j JobRunner) BuildServer(path string, props map[string]interface{}, store map[string]interface{}) (BuildResult, error) {
+func (j JobRunner) BuildServer() (BuildResult, error) {
 	env := j.Env
-
-	// if store == nil {
-	// 	store = map[string]interface{}{}
-	// }
-	// jsonProps, error := json.Marshal(props)
-	// if error != nil {
-	// 	panic(error)
-	// }
-	//
-	// jsonStore, error := json.Marshal(store)
-	// if error != nil {
-	// 	panic(error)
-	// }
 
 	opt := esbuild.Build(esbuild.BuildOptions{
 		EntryPoints:       []string{j.ServerEntryPoint},
@@ -169,11 +140,6 @@ func (j JobRunner) BuildServer(path string, props map[string]interface{}, store 
 		MinifyIdentifiers: env == "production",
 		KeepNames:         true,
 		MinifySyntax:      env == "production",
-		// Define: map[string]string{
-		// 	"props":  string(jsonProps),
-		// 	"store":  string(jsonStore),
-		// 	"global": "globalThis",
-		// },
 		Banner: map[string]string{
 			"js": textEncoderPolyfill + processPolyfill + consolePolyfill,
 		},

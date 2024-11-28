@@ -170,6 +170,31 @@ func (e *Engine) InitializeFrontend() error {
 
 	var client, server pkg.BuildResult
 	var buildClientErr, buildServerErr error
+	g, _ := errgroup.WithContext(context.Background())
+
+	if client.JS == "" || server.JS == "" {
+		g.Go(func() error {
+			client, buildClientErr = job.BuildClient()
+			return buildClientErr
+		})
+
+		g.Go(func() error {
+			server, buildServerErr = job.BuildServer()
+			// create a file for server
+			return buildServerErr
+		})
+
+		// Wait for both functions to complete
+		if err := g.Wait(); err != nil {
+			if buildClientErr != nil {
+				e.Logger.Error().Msgf("Error building client: %s", buildClientErr)
+			}
+			if buildServerErr != nil {
+				e.Logger.Error().Msgf("Error building server: %s", buildServerErr)
+			}
+		}
+	}
+
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
 
@@ -211,32 +236,6 @@ func (e *Engine) InitializeFrontend() error {
 					props = map[string]interface{}{}
 				}
 
-				g, _ := errgroup.WithContext(context.Background())
-
-				if client.JS == "" || server.JS == "" {
-					g.Go(func() error {
-						client, buildClientErr = job.BuildClient(props, store)
-						return buildClientErr
-					})
-
-					g.Go(func() error {
-						server, buildServerErr = job.BuildServer(route.Path, props, store)
-						// create a file for server
-						return buildServerErr
-					})
-
-					// Wait for both functions to complete
-					if err := g.Wait(); err != nil {
-						if buildClientErr != nil {
-							e.Logger.Error().Msgf("Error building client: %s", buildClientErr)
-							return c.String(http.StatusInternalServerError, "Error building client")
-						}
-						if buildServerErr != nil {
-							e.Logger.Error().Msgf("Error building server: %s", buildServerErr)
-							return c.String(http.StatusInternalServerError, "Error building server")
-						}
-					}
-				}
 				if store == nil {
 					store = map[string]interface{}{}
 				}
