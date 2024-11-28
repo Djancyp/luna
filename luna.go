@@ -2,6 +2,7 @@ package luna
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Djancyp/luna/pkg"
 	"github.com/Djancyp/luna/utils"
+	esbuildapi "github.com/evanw/esbuild/pkg/api"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/rs/zerolog"
@@ -77,10 +79,10 @@ func New(config Config) (*Engine, error) {
 		Server: server,
 		Config: config,
 	}
-	if config.ENV != "production" {
-		app.HotReload = newHotReload(app)
-		app.HotReload.Start(config.RootPath)
-	}
+	// if config.ENV != "production" {
+	// 	app.HotReload = newHotReload(app)
+	// 	app.HotReload.Start(config.RootPath)
+	// }
 	app.CheckApp(config)
 	return app, nil
 }
@@ -166,6 +168,8 @@ func (e *Engine) InitializeFrontend() error {
 	}
 	manager := pkg.NewManager()
 
+	var client, server pkg.BuildResult
+	var buildClientErr, buildServerErr error
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
 
@@ -197,22 +201,8 @@ func (e *Engine) InitializeFrontend() error {
 			if matched, _ := pkg.MatchPath(route.Path, path); !matched && route.Path != path {
 				continue
 			}
+			// check where does request come from
 			handler := func(c echo.Context) error {
-				if cachedItem, found := manager.GetCache(path); found {
-					// Check for cached page if in production mode
-					return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
-						Title:           cachedItem.Title,
-						Description:     cachedItem.Description,
-						Favicon:         cachedItem.Favicon,
-						CssLinks:        cachedItem.CSSLinks,
-						RenderedContent: template.HTML(cachedItem.Body),
-						JS:              template.JS(cachedItem.JS),
-						CSS:             template.CSS(cachedItem.CSS),
-						Dev:             e.Config.ENV != "production",
-						SWUrl:           swUrl,
-						MainHead:        attributes,
-					})
-				}
 				_, params := pkg.MatchPath(route.Path, path)
 				var props map[string]interface{}
 				if route.Props != nil {
@@ -221,40 +211,80 @@ func (e *Engine) InitializeFrontend() error {
 					props = map[string]interface{}{}
 				}
 
-				var client, server pkg.BuildResult
-				var buildClientErr, buildServerErr error
-
 				g, _ := errgroup.WithContext(context.Background())
 
-				g.Go(func() error {
-					client, buildClientErr = job.BuildClient(props, store)
-					return buildClientErr
-				})
+				if client.JS == "" || server.JS == "" {
+					g.Go(func() error {
+						client, buildClientErr = job.BuildClient(props, store)
+						return buildClientErr
+					})
 
-				g.Go(func() error {
-					server, buildServerErr = job.BuildServer(route.Path, props, store)
-					return buildServerErr
-				})
+					g.Go(func() error {
+						server, buildServerErr = job.BuildServer(route.Path, props, store)
+						// create a file for server
+						return buildServerErr
+					})
 
-				// Wait for both functions to complete
-				if err := g.Wait(); err != nil {
-					if buildClientErr != nil {
-						e.Logger.Error().Msgf("Error building client: %s", buildClientErr)
-						return c.String(http.StatusInternalServerError, "Error building client")
-					}
-					if buildServerErr != nil {
-						e.Logger.Error().Msgf("Error building server: %s", buildServerErr)
-						return c.String(http.StatusInternalServerError, "Error building server")
+					// Wait for both functions to complete
+					if err := g.Wait(); err != nil {
+						if buildClientErr != nil {
+							e.Logger.Error().Msgf("Error building client: %s", buildClientErr)
+							return c.String(http.StatusInternalServerError, "Error building client")
+						}
+						if buildServerErr != nil {
+							e.Logger.Error().Msgf("Error building server: %s", buildServerErr)
+							return c.String(http.StatusInternalServerError, "Error building server")
+						}
 					}
 				}
+				if store == nil {
+					store = map[string]interface{}{}
+				}
+				jsonProps, error := json.Marshal(props)
+				if error != nil {
+					return error
+				}
+				jsonStore, error := json.Marshal(store)
+				if error != nil {
+					return error
+				}
+				cjs := esbuildapi.Transform(client.JS, esbuildapi.TransformOptions{
+					Define: map[string]string{
+						"props":  string(jsonProps),
+						"store":  string(jsonStore),
+						"global": "globalThis",
+					},
+				})
+				sjs := esbuildapi.Transform(server.JS, esbuildapi.TransformOptions{
+					Define: map[string]string{
+						"props":  string(jsonProps),
+						"store":  string(jsonStore),
+						"global": "globalThis",
+					},
+				})
 				server.CSS = fmt.Sprintf("%s\n%s", server.CSS, tailwindCSS)
 
-				serverHTML, err := pkg.RenderServer(server.JS, route.Path)
+				serverHTML, err := pkg.RenderServer(string(sjs.Code), route.Path)
 				if err != nil {
 					e.Logger.Error().Msgf("Error rendering server HTML: %s", err)
 					return c.String(http.StatusInternalServerError, "Error rendering server HTML")
 				}
 
+				if cachedItem, found := manager.GetCache(path); found {
+					// Check for cached page if in production mode
+					return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
+						Title:           cachedItem.Title,
+						Description:     cachedItem.Description,
+						Favicon:         cachedItem.Favicon,
+						CssLinks:        cachedItem.CSSLinks,
+						RenderedContent: template.HTML(serverHTML),
+						JS:              template.JS(string(cjs.Code)),
+						CSS:             template.CSS(cachedItem.CSS),
+						Dev:             e.Config.ENV != "production",
+						SWUrl:           swUrl,
+						MainHead:        attributes,
+					})
+				}
 				// Collect CSS and JS links
 				cssLinks := make([]template.HTML, len(route.Head.CssLinks))
 				for i, css := range route.Head.CssLinks {
@@ -286,7 +316,7 @@ func (e *Engine) InitializeFrontend() error {
 					HTML:        htmlTemplate,
 					Body:        serverHTML,
 					CSS:         server.CSS,
-					JS:          client.JS,
+					JS:          string(cjs.Code),
 					CSSLinks:    cssLinks,
 					Expiration:  route.CacheExpiry,
 				}
@@ -300,9 +330,9 @@ func (e *Engine) InitializeFrontend() error {
 					CssLinks:        cssLinks,
 					JsLinks:         jsLinks,
 					RenderedContent: template.HTML(serverHTML),
-					JS:              template.JS(client.JS),
+					JS:              template.JS(cjs.Code),
 					CSS:             template.CSS(server.CSS),
-					Dev:             e.Config.ENV != "production",
+					Dev:             false,
 					SWUrl:           swUrl,
 					MainHead:        attributes,
 				}
@@ -321,7 +351,7 @@ func (e *Engine) InitializeFrontend() error {
 		}
 
 		e.Logger.Warn().Msgf("No matching route found for: %s", path)
-		return c.String(http.StatusNotFound, "Page not found")
+		return c.String(http.StatusNotFound, "Page not found 1")
 	})
 
 	return nil
@@ -361,4 +391,19 @@ func (e *Engine) Static(prefix, root string) {
 
 func (e *Engine) Use(middleware ...echo.MiddlewareFunc) {
 	e.Server.Use(middleware...)
+}
+
+func mapToJSObject(data interface{}) string {
+	switch v := data.(type) {
+	case map[string]interface{}: // Handle nested maps
+		var parts []string
+		for key, value := range v {
+			parts = append(parts, fmt.Sprintf("%s: %s", key, mapToJSObject(value)))
+		}
+		return fmt.Sprintf("{ %s }", strings.Join(parts, ", "))
+	case string: // Handle strings with quotes
+		return fmt.Sprintf("\"%s\"", v)
+	default: // Handle other types (numbers, etc.)
+		return fmt.Sprintf("%v", v)
+	}
 }
