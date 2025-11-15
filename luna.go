@@ -28,6 +28,11 @@ type NavigateRequest struct {
 }
 
 func New(config Config) (*Engine, error) {
+	// Validate configuration
+	if err := validateConfig(config); err != nil {
+		return nil, err
+	}
+
 	server := echo.New()
 	server.Static("/assets", config.AssetsPath)
 	// make static public
@@ -75,10 +80,18 @@ func New(config Config) (*Engine, error) {
 		return c.JSON(http.StatusOK, res)
 	})
 	app := &Engine{
-		Logger: zerolog.New(os.Stdout).With().Timestamp().Logger(),
-		Server: server,
-		Config: config,
+		Logger:       zerolog.New(os.Stdout).With().Timestamp().Logger(),
+		Server:       server,
+		Config:       config,
+		CacheManager: pkg.NewManager(),
+		RouteIndex:   NewRouteTrie(),
 	}
+
+	// Build the route index for efficient lookup
+	for i := range config.Routes {
+		app.RouteIndex.Insert(config.Routes[i].Path, &config.Routes[i])
+	}
+
 	if config.ENV != "production" {
 		app.HotReload = newHotReload(app)
 		app.HotReload.Start(config.RootPath)
@@ -158,7 +171,14 @@ func (e *Engine) InitializeFrontend() error {
 	// Initialize Tailwind if configured
 	var tailwindCSS string
 	if e.Config.TailwindCSS {
-		tailwindCSS = pkg.Tailwind(e.Config.RootPath)
+		css, err := pkg.Tailwind(e.Config.RootPath)
+		if err != nil {
+			e.Logger.Error().Msgf("Failed to generate Tailwind CSS: %v", err)
+			// Continue without Tailwind CSS to avoid crashing the application
+			tailwindCSS = ""
+		} else {
+			tailwindCSS = css
+		}
 	}
 
 	job := pkg.JobRunner{
@@ -166,7 +186,8 @@ func (e *Engine) InitializeFrontend() error {
 		ClientEntryPoint: e.Config.ClientEntryPoint,
 		Env:              e.Config.ENV,
 	}
-	manager := pkg.NewManager()
+	// Use the Engine's CacheManager
+	manager := e.CacheManager
 
 	var client, server pkg.BuildResult
 	var buildClientErr, buildServerErr error
@@ -210,7 +231,13 @@ func (e *Engine) InitializeFrontend() error {
 		baseURL := c.Request().Host
 		// clean base url if has port
 		baseURL = strings.Split(baseURL, ":")[0]
+
+		// Determine WebSocket protocol based on request protocol
 		protocol := "ws"
+		if c.Request().TLS != nil || c.Request().Header.Get("X-Forwarded-Proto") == "https" {
+			protocol = "wss"
+		}
+
 		swUrl := fmt.Sprintf("%s://%s:%d/ws", protocol, baseURL, e.Config.HotReloadServerPort)
 
 		// add main css or js
@@ -221,14 +248,23 @@ func (e *Engine) InitializeFrontend() error {
 			attributes[i] = template.HTML(attr)
 		}
 
-		// Route matching and template rendering
-		for _, route := range e.Config.Routes {
-			if matched, _ := pkg.MatchPath(route.Path, path); !matched && route.Path != path {
-				continue
+		// Route matching and template rendering using the route index for efficiency
+		route, params, found := e.RouteIndex.Search(path)
+		if !found {
+			// Check for exact match (fallback for paths that don't use parameters)
+			for _, r := range e.Config.Routes {
+				if r.Path == path {
+					route = &r
+					params = make(map[string]string)
+					found = true
+					break
+				}
 			}
+		}
+
+		if found && route != nil {
 			// check where does request come from
 			handler := func(c echo.Context) error {
-				_, params := pkg.MatchPath(route.Path, path)
 				var props map[string]interface{}
 				if route.Props != nil {
 					props = route.Props(c, params)
@@ -261,7 +297,9 @@ func (e *Engine) InitializeFrontend() error {
 						"global": "globalThis",
 					},
 				})
-				server.CSS = fmt.Sprintf("%s\n%s", server.CSS, tailwindCSS)
+				if tailwindCSS != "" {
+					server.CSS = fmt.Sprintf("%s\n%s", server.CSS, tailwindCSS)
+				}
 
 				serverHTML, err := pkg.RenderServer(string(sjs.Code), route.Path)
 				if err != nil {
@@ -269,16 +307,24 @@ func (e *Engine) InitializeFrontend() error {
 					return c.String(http.StatusInternalServerError, "Error rendering server HTML")
 				}
 
+				// Sanitize the rendered HTML content to prevent XSS
+				sanitizedHTML := pkg.SanitizeRenderedContent(serverHTML)
+
 				if cachedItem, found := manager.GetCache(path); found {
 					// Check for cached page if in production mode
+					// Combine cached CSS with Tailwind CSS
+					combinedCSS := cachedItem.CSS
+					if tailwindCSS != "" {
+						combinedCSS = fmt.Sprintf("%s\n%s", combinedCSS, tailwindCSS)
+					}
 					return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
 						Title:           cachedItem.Title,
 						Description:     cachedItem.Description,
 						Favicon:         cachedItem.Favicon,
 						CssLinks:        cachedItem.CSSLinks,
-						RenderedContent: template.HTML(serverHTML),
+						RenderedContent: template.HTML(sanitizedHTML),
 						JS:              template.JS(string(cjs.Code)),
-						CSS:             template.CSS(cachedItem.CSS),
+						CSS:             template.CSS(combinedCSS),
 						Dev:             e.Config.ENV != "production",
 						SWUrl:           swUrl,
 						MainHead:        attributes,
@@ -306,6 +352,12 @@ func (e *Engine) InitializeFrontend() error {
 					return c.String(http.StatusInternalServerError, "Error loading template")
 				}
 
+				// Combine server CSS with Tailwind CSS for the cache
+				combinedCSS := server.CSS
+				if tailwindCSS != "" {
+					combinedCSS = fmt.Sprintf("%s\n%s", combinedCSS, tailwindCSS)
+				}
+
 				cacheData := pkg.Cache{
 					ID:          path,
 					Title:       route.Head.Title,
@@ -314,7 +366,7 @@ func (e *Engine) InitializeFrontend() error {
 					Path:        path,
 					HTML:        htmlTemplate,
 					Body:        serverHTML,
-					CSS:         server.CSS,
+					CSS:         combinedCSS,
 					JS:          string(cjs.Code),
 					CSSLinks:    cssLinks,
 					Expiration:  route.CacheExpiry,
@@ -328,7 +380,7 @@ func (e *Engine) InitializeFrontend() error {
 					Favicon:         e.Config.FaviconPath,
 					CssLinks:        cssLinks,
 					JsLinks:         jsLinks,
-					RenderedContent: template.HTML(serverHTML),
+					RenderedContent: template.HTML(sanitizedHTML),
 					JS:              template.JS(cjs.Code),
 					CSS:             template.CSS(server.CSS),
 					Dev:             false,
@@ -347,10 +399,10 @@ func (e *Engine) InitializeFrontend() error {
 
 			// Execute the handler with the middleware chain applied
 			return handler(c)
+		} else {
+			e.Logger.Warn().Msgf("No matching route found for: %s", path)
+			return c.String(http.StatusNotFound, "Page not found 1")
 		}
-
-		e.Logger.Warn().Msgf("No matching route found for: %s", path)
-		return c.String(http.StatusNotFound, "Page not found 1")
 	})
 
 	return nil
@@ -388,8 +440,253 @@ func (e *Engine) Static(prefix, root string) {
 	e.Server.Static(prefix, root)
 }
 
+func (e *Engine) Close() {
+	if e.HotReload != nil {
+		e.HotReload.Stop()
+	}
+	if e.CacheManager != nil {
+		e.CacheManager.Close()
+	}
+	// Add any other cleanup code here
+}
+
 func (e *Engine) Use(middleware ...echo.MiddlewareFunc) {
 	e.Server.Use(middleware...)
+}
+
+func validateConfig(config Config) error {
+	if config.RootPath == "" {
+		return fmt.Errorf("RootPath is required")
+	}
+
+	if config.ServerEntryPoint == "" {
+		return fmt.Errorf("ServerEntryPoint is required")
+	}
+
+	if config.ClientEntryPoint == "" {
+		return fmt.Errorf("ClientEntryPoint is required")
+	}
+
+	if config.AssetsPath == "" {
+		return fmt.Errorf("AssetsPath is required")
+	}
+
+	if config.PublicPath == "" {
+		return fmt.Errorf("PublicPath is required")
+	}
+
+	if len(config.Routes) == 0 {
+		return fmt.Errorf("At least one route must be configured")
+	}
+
+	// Validate each route
+	for i, route := range config.Routes {
+		if route.Path == "" {
+			return fmt.Errorf("route at index %d: Path is required", i)
+		}
+		// Check if path is a valid URL pattern
+		if !isValidRoutePath(route.Path) {
+			return fmt.Errorf("route at index %d: invalid path pattern '%s'", i, route.Path)
+		}
+	}
+
+	// We no longer validate Tailwind config here since it's handled in the Tailwind function during build
+
+	return nil
+}
+
+// RoutePathComponent represents a path component (either a literal or parameter)
+type RoutePathComponent struct {
+	Type  string // "literal", "param", or "wildcard"
+	Value string // The literal value or param name
+}
+
+// RouteTrieNode represents a node in the route trie
+type RouteTrieNode struct {
+	children       map[string]*RouteTrieNode
+	paramChild     *RouteTrieNode  // For route parameters like :id
+	paramName      string          // Name of the parameter (e.g., "id" for ":id")
+	wildcardChild  *RouteTrieNode  // For wildcard routes like *path
+	wildcardName   string          // Name of the wildcard parameter
+	route          *pkg.ReactRoute // The route associated with this path (if this is a complete route)
+	originalPath   string          // Original path pattern for parameter name resolution
+	pathComponents []RoutePathComponent // Components of the original path
+}
+
+// RouteTrie is the main trie structure for route matching
+type RouteTrie struct {
+	root *RouteTrieNode
+}
+
+// NewRouteTrie creates a new route trie
+func NewRouteTrie() *RouteTrie {
+	return &RouteTrie{
+		root: &RouteTrieNode{
+			children: make(map[string]*RouteTrieNode),
+		},
+	}
+}
+
+// Insert adds a route to the trie
+func (t *RouteTrie) Insert(path string, route *pkg.ReactRoute) {
+	current := t.root
+
+	// Parse the path into components and store parameter names
+	components := parsePathComponents(path)
+
+	// Store the original path and components for parameter name resolution
+	currentPath := make([]RoutePathComponent, len(components))
+	copy(currentPath, components)
+
+	for i, component := range components {
+		isLastComponent := i == len(components)-1
+
+		if component.Type == "param" {
+			if current.paramChild == nil {
+				current.paramChild = &RouteTrieNode{
+					children: make(map[string]*RouteTrieNode),
+					paramName: component.Value,
+				}
+			}
+			current = current.paramChild
+		} else if component.Type == "wildcard" {
+			if current.wildcardChild == nil {
+				current.wildcardChild = &RouteTrieNode{
+					children: make(map[string]*RouteTrieNode),
+					wildcardName: component.Value,
+				}
+			}
+			current = current.wildcardChild
+		} else { // literal
+			if _, exists := current.children[component.Value]; !exists {
+				current.children[component.Value] = &RouteTrieNode{
+					children: make(map[string]*RouteTrieNode),
+				}
+			}
+			current = current.children[component.Value]
+		}
+
+		if isLastComponent {
+			current.route = route
+			current.originalPath = path
+			current.pathComponents = currentPath
+		}
+	}
+}
+
+// parsePathComponents parses a path string like "/users/:id/posts/*rest" into individual components
+func parsePathComponents(path string) []RoutePathComponent {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	components := make([]RoutePathComponent, 0, len(segments))
+
+	for _, segment := range segments {
+		if strings.HasPrefix(segment, ":") {
+			components = append(components, RoutePathComponent{
+				Type:  "param",
+				Value: strings.TrimPrefix(segment, ":"),
+			})
+		} else if segment == "*" {
+			components = append(components, RoutePathComponent{
+				Type:  "wildcard",
+				Value: "path", // default name for wildcard parameter
+			})
+		} else {
+			components = append(components, RoutePathComponent{
+				Type:  "literal",
+				Value: segment,
+			})
+		}
+	}
+
+	return components
+}
+
+// Search finds a route that matches the given path and extracts parameters
+func (t *RouteTrie) Search(path string) (*pkg.ReactRoute, map[string]string, bool) {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+
+	route, params, found := t.searchNode(t.root, segments, make(map[string]string), 0)
+
+	if found {
+		return route, params, true
+	}
+
+	return nil, nil, false
+}
+
+// searchNode recursively searches the trie for a matching route
+func (t *RouteTrie) searchNode(node *RouteTrieNode, segments []string, params map[string]string, componentIndex int) (*pkg.ReactRoute, map[string]string, bool) {
+	if len(segments) == 0 {
+		if node.route != nil {
+			return node.route, params, true
+		}
+		return nil, nil, false
+	}
+
+	currentSegment := segments[0]
+	remainingSegments := segments[1:]
+
+	// First try exact match
+	if child, exists := node.children[currentSegment]; exists {
+		route, newParams, found := t.searchNode(child, remainingSegments, params, componentIndex+1)
+		if found {
+			return route, newParams, true
+		}
+	}
+
+	// Then try parameter match
+	if node.paramChild != nil && node.paramName != "" {
+		newParams := make(map[string]string)
+		for k, v := range params {
+			newParams[k] = v
+		}
+		// Add the parameter value using the parameter name from the original path
+		newParams[node.paramName] = currentSegment
+		route, finalParams, found := t.searchNode(node.paramChild, remainingSegments, newParams, componentIndex+1)
+		if found {
+			return route, finalParams, true
+		}
+	}
+
+	// Then try wildcard match
+	if node.wildcardChild != nil && node.wildcardName != "" {
+		newParams := make(map[string]string)
+		for k, v := range params {
+			newParams[k] = v
+		}
+		// For wildcard, join the remaining segments
+		wildcardValue := strings.Join(remainingSegments, "/")
+		newParams[node.wildcardName] = wildcardValue
+		// Wildcard matches consume the rest, so pass empty segments
+		route, finalParams, found := t.searchNode(node.wildcardChild, []string{}, newParams, componentIndex+1)
+		if found {
+			return route, finalParams, true
+		}
+	}
+
+	return nil, nil, false
+}
+
+func isValidRoutePath(path string) bool {
+	// Basic validation: path must start with '/' and contain valid characters
+	if path == "" || path[0] != '/' {
+		return false
+	}
+
+	// Check for valid characters in path
+	for _, r := range path {
+		if !isValidPathChar(r) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isValidPathChar(r rune) bool {
+	// Valid path characters include letters, numbers, hyphens, underscores, dots, slashes, and colons for parameters
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+		   r == '/' || r == '-' || r == '_' || r == '.' || r == ':' || r == '*' || r == '(' || r == ')'
 }
 
 func mapToJSObject(data interface{}) string {

@@ -12,11 +12,13 @@ type PropsResponse struct {
 	Path string `json:"path"`
 }
 type Engine struct {
-	Logger    zerolog.Logger
-	Server    *echo.Echo
-	Config    Config
-	Cache     []Cache
-	HotReload *HotReload
+	Logger       zerolog.Logger
+	Server       *echo.Echo
+	Config       Config
+	Cache        []Cache
+	HotReload    *HotReload
+	CacheManager *pkg.Manager
+	RouteIndex   *RouteTrie
 }
 
 type Cache struct {

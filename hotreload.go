@@ -87,7 +87,11 @@ func (hr *HotReload) startServer() {
 
 // removeClient safely removes a websocket connection from connectedClients
 func (hr *HotReload) removeClient(routeID string, ws *websocket.Conn) {
-	clients := hr.connectedClients[routeID]
+	clients, exists := hr.connectedClients[routeID]
+	if !exists {
+		return // Route ID not found, nothing to remove
+	}
+
 	for i, client := range clients {
 		if client == ws {
 			hr.connectedClients[routeID] = append(clients[:i], clients[i+1:]...)
@@ -97,6 +101,22 @@ func (hr *HotReload) removeClient(routeID string, ws *websocket.Conn) {
 	if len(hr.connectedClients[routeID]) == 0 {
 		delete(hr.connectedClients, routeID)
 	}
+}
+
+// Stop closes all connections and stops the hot reload server
+func (hr *HotReload) Stop() {
+	hr.mu.Lock()
+	defer hr.mu.Unlock()
+
+	// Close all client connections
+	for _, clients := range hr.connectedClients {
+		for _, client := range clients {
+			client.Close()
+		}
+	}
+
+	// Clear the connected clients map
+	hr.connectedClients = make(map[string][]*websocket.Conn)
 }
 
 // startWatcher starts the file watcher
@@ -131,8 +151,13 @@ func (hr *HotReload) startWatcher(basedir string) {
 		case event := <-watcher.Events:
 			if event.Op&fsnotify.Write == fsnotify.Write {
 				hr.logger.Info().Msg("Detected change, reloading clients...")
-				hr.engine.InitializeFrontend()
-				hr.reloadClients()
+				// Run InitializeFrontend in a goroutine to avoid blocking the file watcher
+				go func() {
+					if err := hr.engine.InitializeFrontend(); err != nil {
+						hr.logger.Err(err).Msg("Error during frontend initialization")
+					}
+					hr.reloadClients()
+				}()
 			}
 		case err := <-watcher.Errors:
 			hr.logger.Err(err).Msg("Error watching files")

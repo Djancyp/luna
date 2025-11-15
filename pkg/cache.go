@@ -7,9 +7,14 @@ import (
 )
 
 type Manager struct {
-	Cache []Cache
-	mu    sync.RWMutex
+	Cache      []Cache
+	mu         sync.RWMutex
+	stopCh     chan struct{}
+	cleanupWG  sync.WaitGroup
 }
+
+// CleanupInterval defines how often to clean up expired entries (e.g., every 5 minutes)
+const CleanupInterval = 5 * time.Minute
 
 type Cache struct {
 	ID          string
@@ -27,9 +32,16 @@ type Cache struct {
 
 // NewManager initializes a new Manager instance
 func NewManager() *Manager {
-	return &Manager{
-		Cache: make([]Cache, 0),
+	manager := &Manager{
+		Cache:  make([]Cache, 0),
+		stopCh: make(chan struct{}),
 	}
+
+	// Start the background cleanup goroutine
+	manager.cleanupWG.Add(1)
+	go manager.startCleanup()
+
+	return manager
 }
 
 // AddCache adds a new cache entry with a default TTL of 10 minutes
@@ -60,6 +72,29 @@ func (m *Manager) DeleteExpired() {
 
 	now := time.Now().Unix()
 	m.Cache = filterExpired(m.Cache, now)
+}
+
+// startCleanup runs in the background to periodically remove expired cache entries
+func (m *Manager) startCleanup() {
+	defer m.cleanupWG.Done()
+
+	ticker := time.NewTicker(CleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			m.DeleteExpired()
+		case <-m.stopCh:
+			return
+		}
+	}
+}
+
+// Close stops the background cleanup goroutine and waits for it to finish
+func (m *Manager) Close() {
+	close(m.stopCh)
+	m.cleanupWG.Wait()
 }
 
 // filterExpired is a helper function that filters out expired cache entries

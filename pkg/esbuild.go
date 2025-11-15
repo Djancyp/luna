@@ -173,10 +173,13 @@ func RenderServer(js string, path string) (string, error) {
 
 	_, err := ctx.LoadModule(js, "server")
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	opt := quickjs.EvalAwait(true)
+
+	// Escape the path for safe insertion in JavaScript
+	escapedPath := escapeJSString(path)
 
 	// Print the JSON representation
 	script := fmt.Sprintf(`
@@ -199,10 +202,29 @@ func RenderServer(js string, path string) (string, error) {
               globalThis.result = "Error: " + e.toString();
           }
       }
-      start();`, path, path)
+      start();`, escapedPath, escapedPath)
 	_, err = ctx.Eval(script, opt)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	return ctx.Globals().Get("result").String(), nil
+}
+
+// escapeJSString escapes special characters in a string for safe use in JavaScript
+func escapeJSString(s string) string {
+    if s == "" {
+        return ""
+    }
+
+    // Replace special characters with their escaped versions
+    s = strings.ReplaceAll(s, `\`, `\\`)  // Escape backslashes first
+    s = strings.ReplaceAll(s, `"`, `\"`)  // Escape double quotes
+    s = strings.ReplaceAll(s, `'`, `\'`)  // Escape single quotes
+    s = strings.ReplaceAll(s, "\n", `\n`) // Escape newlines
+    s = strings.ReplaceAll(s, "\r", `\r`) // Escape carriage returns
+    s = strings.ReplaceAll(s, "\t", `\t`) // Escape tabs
+    s = strings.ReplaceAll(s, "\b", `\b`) // Escape backspace
+    s = strings.ReplaceAll(s, "\f", `\f`) // Escape form feed
+
+    return s
 }
