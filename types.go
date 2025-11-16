@@ -12,13 +12,16 @@ type PropsResponse struct {
 	Path string `json:"path"`
 }
 type Engine struct {
-	Logger       zerolog.Logger
-	Server       *echo.Echo
-	Config       Config
-	Cache        []Cache
-	HotReload    *HotReload
-	CacheManager *pkg.Manager
-	RouteIndex   *RouteTrie
+	Logger            zerolog.Logger
+	Server            *echo.Echo
+	Config            Config
+	Cache             []Cache
+	HotReload         *HotReload
+	CacheManager      *pkg.Manager
+	RouteIndex        *RouteTrie
+	RouteJSFiles      map[string]string  // Maps route paths to pre-built JS file paths
+	TailwindCSS       string             // Cached Tailwind CSS content
+	TailwindCSSPath   string             // Path to Tailwind CSS file
 }
 
 type Cache struct {
@@ -39,6 +42,7 @@ type Config struct {
 	AssetsPath          string `default:"frontend/src/assets/"`
 	PublicPath          string `default:"public/"`
 	TailwindCSS         bool   `default:"false"`
+	DevModuleServing    bool   `default:"false"`
 	Head                pkg.MainHead
 	HotReloadServerPort int `default:"8080"`
 	Store               pkg.Store

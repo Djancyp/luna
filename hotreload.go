@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -150,14 +151,34 @@ func (hr *HotReload) startWatcher(basedir string) {
 		select {
 		case event := <-watcher.Events:
 			if event.Op&fsnotify.Write == fsnotify.Write {
-				hr.logger.Info().Msg("Detected change, reloading clients...")
-				// Run InitializeFrontend in a goroutine to avoid blocking the file watcher
-				go func() {
-					if err := hr.engine.InitializeFrontend(); err != nil {
-						hr.logger.Err(err).Msg("Error during frontend initialization")
-					}
+				// Check if this is a generated file in .luna directory we should ignore to prevent loops
+				normalizedPath := strings.ReplaceAll(event.Name, "\\", "/") // Normalize path separators
+				if strings.Contains(normalizedPath, "/.luna/") {
+					// Skip rebuild for generated files in .luna directory to prevent infinite loops
+					hr.logger.Info().Msgf("Skipping rebuild for .luna file %s", event.Name)
 					hr.reloadClients()
-				}()
+					continue
+				}
+
+				// Only rebuild if the changed file is a relevant source file
+				ext := filepath.Ext(event.Name)
+				switch ext {
+				case ".js", ".jsx", ".ts", ".tsx", ".css", ".scss", ".sass", ".less", ".json", ".html":
+					hr.logger.Info().Msgf("Detected change in %s, rebuilding...", event.Name)
+					// Run InitializeFrontend in a goroutine to avoid blocking the file watcher
+					go func() {
+						if err := hr.engine.InitializeFrontend(); err != nil {
+							hr.logger.Err(err).Msg("Error during frontend initialization")
+						}
+						hr.reloadClients()
+					}()
+				case ".go": // Go files changed - may need server restart
+					hr.logger.Info().Msgf("Go file changed %s, you may need to restart the server", event.Name)
+				default:
+					// For other files, just reload without rebuild if they're in the public directory
+					hr.logger.Info().Msgf("File changed %s, triggering reload", event.Name)
+					hr.reloadClients()
+				}
 			}
 		case err := <-watcher.Errors:
 			hr.logger.Err(err).Msg("Error watching files")

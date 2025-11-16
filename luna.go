@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -85,6 +87,7 @@ func New(config Config) (*Engine, error) {
 		Config:       config,
 		CacheManager: pkg.NewManager(),
 		RouteIndex:   NewRouteTrie(),
+		RouteJSFiles: make(map[string]string),
 	}
 
 	// Build the route index for efficient lookup
@@ -167,17 +170,43 @@ func (e *Engine) CheckApp(config Config) error {
 	return nil
 }
 
+func createDummyContext() echo.Context {
+	// Create a minimal dummy context for building
+	req, _ := http.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	ctx := echo.New().NewContext(req, rec)
+	return ctx
+}
+
 func (e *Engine) InitializeFrontend() error {
-	// Initialize Tailwind if configured
+	// Build Tailwind CSS if configured (do this once at startup)
 	var tailwindCSS string
+	var tailwindCSSPath string
 	if e.Config.TailwindCSS {
+		// Generate Tailwind CSS content
 		css, err := pkg.Tailwind(e.Config.RootPath)
 		if err != nil {
 			e.Logger.Error().Msgf("Failed to generate Tailwind CSS: %v", err)
 			// Continue without Tailwind CSS to avoid crashing the application
 			tailwindCSS = ""
+			tailwindCSSPath = ""
 		} else {
 			tailwindCSS = css
+			// Write to a file for reference in templates
+			lunaDir := filepath.Join(e.Config.PublicPath, ".luna", "css")
+			if err := os.MkdirAll(lunaDir, 0755); err != nil {
+				e.Logger.Error().Msgf("Failed to create .luna CSS directory: %v", err)
+				tailwindCSSPath = ""
+			} else {
+				cssFilename := "tailwind.css"
+				cssFilePath := filepath.Join(lunaDir, cssFilename)
+				if err := os.WriteFile(cssFilePath, []byte(css), 0644); err != nil {
+					e.Logger.Error().Msgf("Failed to write tailwind.css file: %v", err)
+					tailwindCSSPath = ""
+				} else {
+					tailwindCSSPath = fmt.Sprintf("/.luna/css/%s", cssFilename)
+				}
+			}
 		}
 	}
 
@@ -216,8 +245,82 @@ func (e *Engine) InitializeFrontend() error {
 		}
 	}
 
+	// Store the Tailwind CSS in the Engine
+	e.TailwindCSS = tailwindCSS
+	e.TailwindCSSPath = tailwindCSSPath
+
+	// Initialize the route JS files map
+	if e.RouteJSFiles == nil {
+		e.RouteJSFiles = make(map[string]string)
+	}
+
+	// Pre-build JavaScript bundles for all routes at startup
+	for _, route := range e.Config.Routes {
+		// Create a dummy Echo context for building
+		dummyCtx := createDummyContext()
+
+		var store map[string]interface{}
+		if e.Config.Store != nil {
+			store = e.Config.Store(dummyCtx)
+		}
+
+		var props map[string]interface{}
+		if route.Props != nil {
+			// Use empty params for pre-building
+			props = route.Props(dummyCtx, make(map[string]string))
+		} else {
+			props = map[string]interface{}{}
+		}
+
+		if store == nil {
+			store = map[string]interface{}{}
+		}
+
+		jsonProps, _ := json.Marshal(props)
+		jsonStore, _ := json.Marshal(store)
+
+		cjs := esbuildapi.Transform(client.JS, esbuildapi.TransformOptions{
+			Define: map[string]string{
+				"props":  string(jsonProps),
+				"store":  string(jsonStore),
+				"global": "globalThis",
+			},
+		})
+
+		// Generate unique filename for each route
+		jsHash := fmt.Sprintf("%x", len(string(cjs.Code))) // Use length as simple identifier
+		jsFilename := fmt.Sprintf(".luna/js/luna-client-%s-%s.js",
+			strings.ReplaceAll(route.Path[1:], "/", "-"), // Replace slashes in path to get valid filename
+			jsHash)
+		jsFilePath := filepath.Join(e.Config.PublicPath, jsFilename)
+
+		// Write JS to file
+		if err := os.MkdirAll(filepath.Dir(jsFilePath), 0755); err != nil {
+			e.Logger.Error().Msgf("Error creating JS directory: %v", err)
+		} else if err := os.WriteFile(jsFilePath, cjs.Code, 0644); err != nil {
+			e.Logger.Error().Msgf("Error writing JS file: %v", err)
+		} else {
+			// Store the path for runtime lookup
+			e.RouteJSFiles[route.Path] = fmt.Sprintf("/%s", jsFilename)
+		}
+	}
+
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
+
+		// Handle special development virtual modules
+		if e.Config.ENV != "production" && e.Config.DevModuleServing {
+			// Check if it's a virtual module request
+			if strings.HasPrefix(path, "/@") {
+				return handleVirtualModule(c, path)
+			}
+
+			// Check if it's a source file that needs transformation
+			ext := filepath.Ext(path)
+			if ext == ".js" || ext == ".jsx" || ext == ".ts" || ext == ".tsx" {
+				return handleDevModuleServing(c, path, e.Config)
+			}
+		}
 
 		// Serve static files directly
 		if filepath.Ext(path) != "" {
@@ -297,9 +400,7 @@ func (e *Engine) InitializeFrontend() error {
 						"global": "globalThis",
 					},
 				})
-				if tailwindCSS != "" {
-					server.CSS = fmt.Sprintf("%s\n%s", server.CSS, tailwindCSS)
-				}
+				// Tailwind CSS is served as a separate file via CSS links, not inline in server.CSS
 
 				serverHTML, err := pkg.RenderServer(string(sjs.Code), route.Path)
 				if err != nil {
@@ -310,20 +411,46 @@ func (e *Engine) InitializeFrontend() error {
 				// Sanitize the rendered HTML content to prevent XSS
 				sanitizedHTML := pkg.SanitizeRenderedContent(serverHTML)
 
+				// For reliability, use inline JavaScript during request handling
+				// File-based approach can be used for optimization in production
+
 				if cachedItem, found := manager.GetCache(path); found {
 					// Check for cached page if in production mode
-					// Combine cached CSS with Tailwind CSS
+					// Tailwind CSS is served as a separate file via CSS links, not inline in cached CSS
 					combinedCSS := cachedItem.CSS
-					if tailwindCSS != "" {
-						combinedCSS = fmt.Sprintf("%s\n%s", combinedCSS, tailwindCSS)
-					}
 					return cachedItem.HTML.Execute(c.Response().Writer, pkg.CreateTemplateData{
 						Title:           cachedItem.Title,
 						Description:     cachedItem.Description,
 						Favicon:         cachedItem.Favicon,
-						CssLinks:        cachedItem.CSSLinks,
+						CssLinks: func() []template.HTML {
+							var cssLinks []template.HTML
+							// Add Tailwind CSS first if available
+							if e.TailwindCSSPath != "" {
+								cssLinks = []template.HTML{
+									template.HTML(fmt.Sprintf("<link href=\"%s\" rel=\"stylesheet\" />", e.TailwindCSSPath)),
+								}
+							} else {
+								cssLinks = []template.HTML{}
+							}
+							// Add cached CSS links
+							cssLinks = append(cssLinks, cachedItem.CSSLinks...)
+							return cssLinks
+						}(),
 						RenderedContent: template.HTML(sanitizedHTML),
-						JS:              template.JS(string(cjs.Code)),
+						JS: func() template.JS {
+							// For cached responses, use pre-built file if available, otherwise inline
+							if preBuiltFile, exists := e.RouteJSFiles[route.Path]; exists && preBuiltFile != "" {
+								// Use pre-built file reference
+								return template.JS(preBuiltFile)
+							} else {
+								// Fallback to inline JavaScript with dynamic props
+								inlineJS := string(cjs.Code)
+								if inlineJS == "" {
+									inlineJS = "// No client-side JavaScript to run"  // Minimal fallback
+								}
+								return template.JS(inlineJS)
+							}
+						}(),
 						CSS:             template.CSS(combinedCSS),
 						Dev:             e.Config.ENV != "production",
 						SWUrl:           swUrl,
@@ -331,15 +458,26 @@ func (e *Engine) InitializeFrontend() error {
 					})
 				}
 				// Collect CSS and JS links
-				cssLinks := make([]template.HTML, len(route.Head.CssLinks))
-				for i, css := range route.Head.CssLinks {
+				var cssLinks []template.HTML
+				// Add Tailwind CSS first if available
+				if e.TailwindCSSPath != "" {
+					cssLinks = []template.HTML{
+						template.HTML(fmt.Sprintf("<link href=\"%s\" rel=\"stylesheet\" />", e.TailwindCSSPath)),
+					}
+				} else {
+					cssLinks = []template.HTML{}
+				}
+
+				// Add route-specific CSS links
+				for _, css := range route.Head.CssLinks {
 					// Check if css is a third-party link by looking for "https" in the URL
 					if strings.Contains(css.Href, "https") {
-						cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"%s\" rel=\"stylesheet\" />", css.Href))
+						cssLinks = append(cssLinks, template.HTML(fmt.Sprintf("<link href=\"%s\" rel=\"stylesheet\" />", css.Href)))
 					} else {
-						cssLinks[i] = template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href))
+						cssLinks = append(cssLinks, template.HTML(fmt.Sprintf("<link href=\"/assets/%s\" rel=\"stylesheet\" />", css.Href)))
 					}
 				}
+
 				jsLinks := make([]template.HTML, len(route.Head.JsLinks))
 				for i, js := range route.Head.JsLinks {
 					jsLinks[i] = template.HTML(fmt.Sprintf("<script src=\"/assets/%s\" type=\"module\"></script>", js.Src))
@@ -352,11 +490,9 @@ func (e *Engine) InitializeFrontend() error {
 					return c.String(http.StatusInternalServerError, "Error loading template")
 				}
 
-				// Combine server CSS with Tailwind CSS for the cache
+				// For the cache, we store the original server CSS without Tailwind
 				combinedCSS := server.CSS
-				if tailwindCSS != "" {
-					combinedCSS = fmt.Sprintf("%s\n%s", combinedCSS, tailwindCSS)
-				}
+				// Tailwind CSS is now served as a separate file via CSS links
 
 				cacheData := pkg.Cache{
 					ID:          path,
@@ -366,12 +502,36 @@ func (e *Engine) InitializeFrontend() error {
 					Path:        path,
 					HTML:        htmlTemplate,
 					Body:        serverHTML,
-					CSS:         combinedCSS,
-					JS:          string(cjs.Code),
+					CSS:         combinedCSS,  // Tailwind is served via CSS links, not inline
+					JS: func() string {
+						// For cache, store file reference if available, otherwise store inline code
+						if preBuiltFile, exists := e.RouteJSFiles[route.Path]; exists && preBuiltFile != "" {
+							fmt.Println("preBuiltFile", preBuiltFile)
+							return preBuiltFile
+						} else {
+							fmt.Println("cjs.Code", string(cjs.Code))
+							return string(cjs.Code)
+						}
+					}(),
 					CSSLinks:    cssLinks,
 					Expiration:  route.CacheExpiry,
 				}
 				manager.AddCache(cacheData)
+
+				// Determine JavaScript source - use pre-built file if available, otherwise inline
+				var jsSource template.JS
+				if preBuiltFile, exists := e.RouteJSFiles[route.Path]; exists && preBuiltFile != "" {
+					// Use pre-built file reference
+					jsSource = template.JS(preBuiltFile)
+					fmt.Println("preBuiltFile", jsSource)
+				} else {
+					// Fallback to inline JavaScript with dynamic props
+					inlineJS := string(cjs.Code)
+					if inlineJS == "" {
+						inlineJS = "// No client-side JavaScript to run"  // Minimal fallback
+					}
+					jsSource = template.JS(inlineJS)
+				}
 
 				// Render response with template data
 				templateData := pkg.CreateTemplateData{
@@ -381,7 +541,7 @@ func (e *Engine) InitializeFrontend() error {
 					CssLinks:        cssLinks,
 					JsLinks:         jsLinks,
 					RenderedContent: template.HTML(sanitizedHTML),
-					JS:              template.JS(cjs.Code),
+					JS:              jsSource,
 					CSS:             template.CSS(server.CSS),
 					Dev:             false,
 					SWUrl:           swUrl,
@@ -687,6 +847,194 @@ func isValidPathChar(r rune) bool {
 	// Valid path characters include letters, numbers, hyphens, underscores, dots, slashes, and colons for parameters
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
 		   r == '/' || r == '-' || r == '_' || r == '.' || r == ':' || r == '*' || r == '(' || r == ')'
+}
+
+// handleDevModuleServing serves source files with transformation for development
+func handleDevModuleServing(c echo.Context, path string, config Config) error {
+	// Read the source file
+	fullPath := filepath.Join(config.RootPath, path[1:]) // Remove leading slash
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return c.String(http.StatusNotFound, "File not found")
+	}
+
+	// For JSX/TSX files, we'll return a modified version with import mappings
+	ext := filepath.Ext(path)
+	if ext == ".jsx" || ext == ".tsx" {
+		// Transform import statements to map to the correct dev server paths
+		transformedContent := transformModuleImports(string(content), path)
+
+		// Add a small preamble to enable module serving
+		preamble := fmt.Sprintf(`/* Luna Dev Server - Vite-style module serving */
+const __luna_import_map = {
+  'react': '/@react',
+  'react-dom': '/@react-dom',
+  'react/jsx-runtime': '/@react-jsx-runtime'
+};
+
+// Add the current module path to the context
+const __luna_current_module = '%s';
+
+// Enable module resolution
+const __luna_resolve = (id) => {
+  if (__luna_import_map[id]) {
+    return __luna_import_map[id];
+  }
+  // For relative imports, resolve relative to current module
+  if (id.startsWith('./') || id.startsWith('../')) {
+    const base = __luna_current_module.substring(0, __luna_current_module.lastIndexOf('/'));
+    return new URL(id, 'http://localhost' + base + '/').pathname;
+  }
+  return id;
+};
+`, path)
+
+		transformedContent = preamble + transformedContent
+
+		c.Response().Header().Set("Content-Type", "application/javascript")
+		return c.String(http.StatusOK, transformedContent)
+	}
+
+	// For regular JS files, transform import statements
+	transformedContent := transformModuleImports(string(content), path)
+	c.Response().Header().Set("Content-Type", "application/javascript")
+	return c.String(http.StatusOK, transformedContent)
+}
+
+// handleVirtualModule serves virtual modules for development
+func handleVirtualModule(c echo.Context, path string) error {
+	switch path {
+	case "/@react":
+		// In a real implementation, this would fetch the React library
+		// For now, we'll return a placeholder that allows the app to work
+		c.Response().Header().Set("Content-Type", "application/javascript")
+		return c.String(http.StatusOK, `
+// Luna React Virtual Module
+// This is a placeholder for React in development mode
+// In a real implementation, this would serve the actual React library
+
+// Export React functions
+export const useState = (initial) => {
+  const hookId = Math.random();
+  return [initial, (newValue) => { /* update state */ }];
+};
+
+export const useEffect = (fn, deps) => {
+  // Execute effect
+  fn();
+};
+
+export const useRef = (initial) => {
+  return { current: initial };
+};
+
+// React element creation for JSX
+export const createElement = (type, props, ...children) => {
+  if (typeof type === 'function') {
+    // Component
+    return type({ ...props, children });
+  }
+
+  // DOM element
+  const element = document.createElement(type);
+  if (props) {
+    Object.keys(props).forEach(key => {
+      if (key.startsWith('on')) {
+        // Event handler
+        element.addEventListener(key.slice(2).toLowerCase(), props[key]);
+      } else if (key !== 'children') {
+        // Regular attribute
+        element.setAttribute(key, props[key]);
+      }
+    });
+  }
+
+  // Add children
+  children.forEach(child => {
+    if (typeof child === 'string' || typeof child === 'number') {
+      element.appendChild(document.createTextNode(child.toString()));
+    } else if (child instanceof HTMLElement) {
+      element.appendChild(child);
+    }
+  });
+
+  return element;
+};
+
+export default {
+  useState,
+  useEffect,
+  useRef,
+  createElement
+};
+`)
+	case "/@react-dom":
+		c.Response().Header().Set("Content-Type", "application/javascript")
+		return c.String(http.StatusOK, `
+// Luna React DOM Virtual Module
+import { createElement } from '/@react';
+
+export const createRoot = (container) => {
+  return {
+    render: (element) => {
+      container.innerHTML = '';
+      if (element && element.nodeType) {
+        container.appendChild(element);
+      } else {
+        // Convert element to DOM if needed
+        const domElement = typeof element === 'function' ? element() : element;
+        if (domElement && domElement.nodeType) {
+          container.appendChild(domElement);
+        }
+      }
+    }
+  };
+};
+
+export default { createRoot };
+export { createRoot };
+`)
+	case "/@react-jsx-runtime":
+		c.Response().Header().Set("Content-Type", "application/javascript")
+		return c.String(http.StatusOK, `
+// Luna React JSX Runtime Virtual Module
+import { createElement } from '/@react';
+
+export const jsx = (type, props) => createElement(type, props);
+export const jsxs = (type, props, key) => createElement(type, props);
+
+export default { jsx, jsxs };
+`)
+	default:
+		return c.String(http.StatusNotFound, "Virtual module not found")
+	}
+}
+
+// transformModuleImports transforms import statements to work with the dev server
+func transformModuleImports(content, modulePath string) string {
+	// This is a simplified version - in a complete implementation, we'd use a proper AST parser
+	// For now, we'll do basic regex replacements
+
+	// Handle relative imports
+	// Replace "from './module'" or "from '../module'" with resolved paths
+	re := regexp.MustCompile(`(["'])(\.{1,2}/[^"']+\.(js|jsx|ts|tsx))(["'])`)
+	content = re.ReplaceAllStringFunc(content, func(match string) string {
+		parts := re.FindStringSubmatch(match)
+		if len(parts) > 2 {
+			// Create a resolved path
+			dir := filepath.Dir(modulePath)
+			resolvedPath := filepath.Join("/", dir, parts[2])
+			// Clean up the path to remove double slashes and normalize
+			resolvedPath = filepath.Clean(resolvedPath)
+			if resolvedPath[0] != '/' {
+				resolvedPath = "/" + resolvedPath
+			}
+			return parts[1] + resolvedPath + parts[4]
+		}
+		return match
+	})
+
+	return content
 }
 
 func mapToJSObject(data interface{}) string {

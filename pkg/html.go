@@ -109,15 +109,23 @@ const templateHTML = `<!doctype html>
   </head>
   <body>
     <div id="root">{{ .RenderedContent }}</div>
-    <script type="module">
-      {{ .JS }}
-    </script>
-  </body>
+			<script type="module" src="{{ .JS }}"></script>
 </html>
 `
 
 func GetHTML() (*template.Template, error) {
-	templ, err := template.New("html").Parse(templateHTML)
+	funcMap := template.FuncMap{
+		"hasPrefix": func(s, prefix string) bool {
+			if len(s) < len(prefix) {
+				return false
+			}
+			return s[:len(prefix)] == prefix
+		},
+		"safeJS": func(s string) template.JS {
+			return template.JS(s)
+		},
+	}
+	templ, err := template.New("html").Funcs(funcMap).Parse(templateHTML)
 	if err != nil {
 		return nil, err
 	}
