@@ -254,56 +254,10 @@ func (e *Engine) InitializeFrontend() error {
 		e.RouteJSFiles = make(map[string]string)
 	}
 
-	// Pre-build JavaScript bundles for all routes at startup
-	for _, route := range e.Config.Routes {
-		// Create a dummy Echo context for building
-		dummyCtx := createDummyContext()
-
-		var store map[string]interface{}
-		if e.Config.Store != nil {
-			store = e.Config.Store(dummyCtx)
-		}
-
-		var props map[string]interface{}
-		if route.Props != nil {
-			// Use empty params for pre-building
-			props = route.Props(dummyCtx, make(map[string]string))
-		} else {
-			props = map[string]interface{}{}
-		}
-
-		if store == nil {
-			store = map[string]interface{}{}
-		}
-
-		jsonProps, _ := json.Marshal(props)
-		jsonStore, _ := json.Marshal(store)
-
-		cjs := esbuildapi.Transform(client.JS, esbuildapi.TransformOptions{
-			Define: map[string]string{
-				"props":  string(jsonProps),
-				"store":  string(jsonStore),
-				"global": "globalThis",
-			},
-		})
-
-		// Generate unique filename for each route
-		jsHash := fmt.Sprintf("%x", len(string(cjs.Code))) // Use length as simple identifier
-		jsFilename := fmt.Sprintf(".luna/js/luna-client-%s-%s.js",
-			strings.ReplaceAll(route.Path[1:], "/", "-"), // Replace slashes in path to get valid filename
-			jsHash)
-		jsFilePath := filepath.Join(e.Config.PublicPath, jsFilename)
-
-		// Write JS to file
-		if err := os.MkdirAll(filepath.Dir(jsFilePath), 0755); err != nil {
-			e.Logger.Error().Msgf("Error creating JS directory: %v", err)
-		} else if err := os.WriteFile(jsFilePath, cjs.Code, 0644); err != nil {
-			e.Logger.Error().Msgf("Error writing JS file: %v", err)
-		} else {
-			// Store the path for runtime lookup
-			e.RouteJSFiles[route.Path] = fmt.Sprintf("/%s", jsFilename)
-		}
-	}
+	// Do not pre-build JavaScript bundles during initialization to avoid runtime errors
+	// The props functions may require context not available during init (DB connections, sessions, etc.)
+	// Initialize empty map - routes will be built on-demand
+	e.RouteJSFiles = make(map[string]string)
 
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
