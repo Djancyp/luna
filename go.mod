@@ -1,4 +1,4 @@
-module github.com/Djancyp/luna/v2
+module github.com/Djancyp/luna
 
 go 1.21.6
 
