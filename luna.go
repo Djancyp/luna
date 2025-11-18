@@ -256,8 +256,7 @@ func (e *Engine) InitializeFrontend() error {
 
 	// Do not pre-build JavaScript bundles during initialization to avoid runtime errors
 	// The props functions may require context not available during init (DB connections, sessions, etc.)
-	// Initialize empty map - routes will be built on-demand
-	e.RouteJSFiles = make(map[string]string)
+	// Routes will be built on-demand when accessed with proper request context
 
 	e.GET("/*", func(c echo.Context) error {
 		path := c.Request().URL.Path
